@@ -1,0 +1,8 @@
+node_modules
+.next
+.vercel
+next-env.d.ts
+*.tsbuildinfo
+data/.cache
+public/maplibre-gl-worker.mjs
+.env*

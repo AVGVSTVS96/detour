@@ -1,0 +1,43 @@
+@import "tailwindcss";
+
+@theme {
+  --color-paper: #ffffff;
+  --color-ink: #0a0a0a;
+  --color-mute: #5c5c5c;
+  --color-hi: #ffe94d;
+  --color-warn: #ff4d2e;
+  --font-sans:
+    -apple-system, BlinkMacSystemFont, "Helvetica Neue", system-ui, sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-paper: #0b0b0b;
+    --color-ink: #f2f2f2;
+    --color-mute: #a3a3a3;
+    --color-hi: #ffe94d;
+    color-scheme: dark;
+  }
+}
+
+html,
+body {
+  height: 100%;
+  overscroll-behavior: none;
+  background: var(--color-paper);
+  color: var(--color-ink);
+  -webkit-tap-highlight-color: transparent;
+}
+
+@media (prefers-color-scheme: dark) {
+  .maplibregl-ctrl-attrib,
+  .maplibregl-ctrl-attrib-button {
+    background-color: #0b0b0b;
+    color: #a3a3a3;
+    filter: invert(0);
+  }
+
+  .maplibregl-ctrl-attrib a {
+    color: #a3a3a3;
+  }
+}

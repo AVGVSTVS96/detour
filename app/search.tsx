@@ -203,9 +203,17 @@ export const Search = ({
 
   if (query.trim().length < 2) {
     return (
-      <p className="p-4 text-lg text-mute">
-        Type a road, like Mulholland, or a town, like Big Sur.
-      </p>
+      <div className="flex flex-col gap-6 p-4">
+        <p className="text-lg">
+          Type a road, like Mulholland, or a town, like Big Sur.
+        </p>
+        <p className="text-base text-mute">
+          Live closures cover state highways only. Road data © OpenStreetMap
+          contributors, Caltrans, FHWA, city and county pavement surveys, AWS
+          Terrain Tiles; rider quotes link to their sources. Check conditions
+          before you go.
+        </p>
+      </div>
     );
   }
 

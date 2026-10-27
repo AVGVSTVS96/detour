@@ -11,7 +11,6 @@ export interface Way {
   ref: string;
   highway: string;
   surface: string;
-  tracktype: string;
   smoothness: string;
   oneway: boolean;
   nodes: [number, number];
@@ -26,7 +25,7 @@ export type Scenery = [
   line: Point[],
 ];
 
-const run = async (command: string[]) => {
+export const run = async (command: string[]) => {
   const child = Bun.spawn(command, { stderr: "inherit", stdout: "inherit" });
 
   if ((await child.exited) !== 0) {
@@ -34,7 +33,7 @@ const run = async (command: string[]) => {
   }
 };
 
-const readLines = async <T>(path: string) => {
+export const readLines = async <T>(path: string) => {
   const text = await Bun.file(path).text();
 
   return await Promise.all(
@@ -52,7 +51,7 @@ export const extractOsm = async () => {
     await run(["curl", "-sSLo", pbf, PBF]);
   }
 
-  if (!(await Bun.file(`${CACHE}/scenery.ndjson`).exists())) {
+  if (!(await Bun.file(`${CACHE}/density.json`).exists())) {
     await run([
       "uv",
       "run",
@@ -62,6 +61,7 @@ export const extractOsm = async () => {
       `${CACHE}/roads.ndjson`,
       `${CACHE}/places.ndjson`,
       `${CACHE}/scenery.ndjson`,
+      `${CACHE}/density.json`,
     ]);
   }
 
@@ -74,6 +74,9 @@ export const extractOsm = async () => {
 
 const refsOf = (way: Way) => way.ref.split(";").filter(Boolean);
 
+const baseName = (name: string) =>
+  name.replace(/\s*\(.*\)$/u, "").replace(/^(?:North|South|East|West)\s+/u, "");
+
 const heading = (from: Point, to: Point) =>
   Math.atan2(
     to[1] - from[1],
@@ -83,7 +86,8 @@ const heading = (from: Point, to: Point) =>
 const turn = (a: number, b: number) =>
   Math.abs(((b - a + 3 * Math.PI) % (2 * Math.PI)) - Math.PI);
 
-const MAX_TURN = Math.PI * 0.6;
+const NAMED_TURN = Math.PI * 0.8;
+const REF_TURN = Math.PI * 0.6;
 
 export const chain = (ways: Way[]) => {
   const byNode = new Map<number, Way[]>();
@@ -101,20 +105,15 @@ export const chain = (ways: Way[]) => {
   }
 
   const used = new Set<number>();
-  const chains: { coords: Point[]; ways: Way[] }[] = [];
+  const chains: { coords: Point[]; owners: Way[] }[] = [];
 
   const extend = (
+    road: { name: string; refs: Set<string> },
     coords: Point[],
-    members: Way[],
+    owners: Way[],
     node: number,
     atEnd: boolean
   ) => {
-    const refs = new Set(members.flatMap((way) => refsOf(way)));
-
-    const names = new Set(
-      members.flatMap((way) => (way.name ? [way.name] : []))
-    );
-
     let current = node;
 
     const leaving = (way: Way) => {
@@ -123,6 +122,14 @@ export const chain = (ways: Way[]) => {
 
       return heading(points[0], points[1] ?? points[0]);
     };
+
+    const sameName = (way: Way) =>
+      way.name !== "" && baseName(way.name) === road.name;
+
+    const joins = (way: Way) =>
+      sameName(way) ||
+      ((way.name === "" || road.name === "") &&
+        refsOf(way).some((ref) => road.refs.has(ref)));
 
     for (;;) {
       const at = current;
@@ -136,34 +143,46 @@ export const chain = (ways: Way[]) => {
       const options = (byNode.get(at) ?? []).filter(
         (way) =>
           !used.has(way.id) &&
-          (refsOf(way).some((ref) => refs.has(ref)) || names.has(way.name)) &&
+          joins(way) &&
           (!way.oneway || way.nodes[atEnd ? 0 : 1] === at)
       );
 
       const [next] = options.toSorted(
-        (a, b) => turn(arriving, leaving(a)) - turn(arriving, leaving(b))
+        (a, b) =>
+          Number(sameName(b)) - Number(sameName(a)) ||
+          turn(arriving, leaving(a)) - turn(arriving, leaving(b))
       );
 
-      if (next === undefined || turn(arriving, leaving(next)) > MAX_TURN) {
+      if (
+        next === undefined ||
+        turn(arriving, leaving(next)) > (sameName(next) ? NAMED_TURN : REF_TURN)
+      ) {
         return;
       }
 
       used.add(next.id);
-      members.push(next);
-      names.add(next.name);
+
+      if (road.name === "" && next.name !== "") {
+        road.name = baseName(next.name);
+      }
 
       for (const ref of refsOf(next)) {
-        refs.add(ref);
+        road.refs.add(ref);
       }
 
       const forward = next.nodes[0] === current;
       const points = forward ? next.coords : next.coords.toReversed();
       current = forward ? next.nodes[1] : next.nodes[0];
 
+      const added = points.slice(1);
+      const owned = added.map(() => next);
+
       if (atEnd) {
-        coords.push(...points.slice(1));
+        coords.push(...added);
+        owners.push(...owned);
       } else {
-        coords.unshift(...points.slice(1).toReversed());
+        coords.unshift(...added.toReversed());
+        owners.unshift(...owned);
       }
     }
   };
@@ -182,11 +201,12 @@ export const chain = (ways: Way[]) => {
     }
 
     used.add(way.id);
+    const road = { name: baseName(way.name), refs: new Set(refsOf(way)) };
     const coords = [...way.coords];
-    const members = [way];
-    extend(coords, members, way.nodes[1], true);
-    extend(coords, members, way.nodes[0], false);
-    chains.push({ coords, ways: members });
+    const owners = coords.map(() => way);
+    extend(road, coords, owners, way.nodes[1], true);
+    extend(road, coords, owners, way.nodes[0], false);
+    chains.push({ coords, owners });
   }
 
   return chains;

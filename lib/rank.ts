@@ -15,6 +15,7 @@ export interface Ranked {
 
 const FASTEST = 26.8;
 const TYPICAL = 17.9;
+const TIMED = 80;
 
 const routeNumber = (text: string) => /\d+/u.exec(text)?.[0] ?? null;
 
@@ -41,18 +42,19 @@ const ends = (road: Road, origin: Point): [Point, Point] => {
 };
 
 const quality = (road: Road, qualities: Quality[]) => {
-  if (qualities.length === 0) {
-    return 50;
-  }
+  const average =
+    qualities.length === 0
+      ? 50
+      : qualities.reduce((sum, item) => sum + (road[item] ?? 50), 0) /
+        qualities.length;
 
-  const total = qualities.reduce((sum, item) => sum + (road[item] ?? 50), 0);
+  const length = 0.4 + 0.6 * Math.min(1, road.miles / 8);
+  const riders = 1 + 0.25 * Math.min(1, road.riders / 4);
 
-  return (
-    (total / qualities.length) * (0.7 + 0.3 * Math.min(1, road.miles / 15))
-  );
+  return average * length * riders;
 };
 
-export const shortlist = (
+export const inReach = (
   roads: Road[],
   origin: Point,
   qualities: Quality[],
@@ -63,16 +65,17 @@ export const shortlist = (
       const end = ends(road, origin);
 
       return distance(origin, end[0]) <= minutes * 60 * FASTEST
-        ? [{ end, road }]
+        ? [{ end, road, value: quality(road, qualities) }]
         : [];
     })
-    .toSorted((a, b) => quality(b.road, qualities) - quality(a.road, qualities))
-    .slice(0, 80);
+    .toSorted((a, b) => b.value - a.value);
+
+export const toTime = (candidates: ReturnType<typeof inReach>) =>
+  candidates.slice(0, TIMED);
 
 export const rank = (
-  candidates: ReturnType<typeof shortlist>,
+  candidates: ReturnType<typeof inReach>,
   origin: Point,
-  qualities: Quality[],
   minutes: number,
   closures: Closure[],
   driveSeconds: Map<string, number>
@@ -81,6 +84,7 @@ export const rank = (
 
   for (const {
     road,
+    value,
     end: [start, end],
   } of candidates) {
     const known = driveSeconds.get(road.id);
@@ -96,7 +100,7 @@ export const rank = (
       estimated: known === undefined,
       minutes: away,
       road,
-      score: quality(road, qualities) * (1 - 0.4 * (away / minutes)),
+      score: value * (1 - 0.4 * (away / minutes)),
       start,
     });
   }

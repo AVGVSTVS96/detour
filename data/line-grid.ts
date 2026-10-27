@@ -1,5 +1,5 @@
 import { Grid } from "@/data/grid";
-import { lineDistance } from "@/lib/geo";
+import { lineDistance, project } from "@/lib/geo";
 import type { Point } from "@/lib/geo";
 
 interface Segment<T> {
@@ -7,6 +7,20 @@ interface Segment<T> {
   start: Point;
   end: Point;
 }
+
+const ALIGNED = (35 * Math.PI) / 180;
+
+export const headingOf = (start: Point, end: Point) => {
+  const [x, y] = project(start)(end);
+
+  return Math.atan2(y, x);
+};
+
+const aligned = (a: number, b: number) => {
+  const turn = Math.abs(a - b) % Math.PI;
+
+  return Math.min(turn, Math.PI - turn) <= ALIGNED;
+};
 
 export class LineGrid<T> {
   private readonly grid: Grid<Segment<T>>;
@@ -22,6 +36,17 @@ export class LineGrid<T> {
         line[index],
       ]);
     }
+  }
+
+  along(point: Point, heading: number, meters: number) {
+    return this.grid
+      .near(point)
+      .filter(
+        ({ start, end }) =>
+          lineDistance(point, [start, end]) <= meters &&
+          aligned(heading, headingOf(start, end))
+      )
+      .map(({ value }) => value);
   }
 
   within(point: Point, meters: number) {

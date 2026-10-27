@@ -2,57 +2,90 @@ import type { FeatureCollection, GeoJsonProperties, Geometry } from "geojson";
 
 import { readJson } from "@/lib/json";
 
-const PAGE = 2000;
-
 type Features<P> = FeatureCollection<Geometry | null, P>["features"];
 
-const query = async <P extends GeoJsonProperties>(
-  layer: string,
-  where: string,
-  fields: string,
-  offset: number,
-  attempt = 1
-): Promise<Features<P>> => {
-  const params = new URLSearchParams({
-    f: "geojson",
-    orderByFields: "objectid",
-    outFields: fields,
-    outSR: "4326",
-    resultOffset: String(offset),
-    resultRecordCount: String(PAGE),
-    where,
-  });
+interface LayerInfo {
+  objectIdField?: string;
+  maxRecordCount?: number;
+  fields?: { name: string; type: string }[];
+}
 
-  const response = await fetch(`${layer}/query?${params}`);
+const retried = async (url: string, attempt = 1): Promise<Response> => {
+  const response = await fetch(url).catch(() => null);
 
-  if (!response.ok) {
-    if (attempt === 6) {
-      throw new Error(`${layer} ${response.status}`);
-    }
-
-    await Bun.sleep(attempt * 3000);
-
-    return await query<P>(layer, where, fields, offset, attempt + 1);
+  if (response?.ok === true) {
+    return response;
   }
 
-  const page = await readJson<FeatureCollection<Geometry | null, P>>(response);
+  if (attempt === 6) {
+    throw new Error(`${url} ${response?.status ?? "unreachable"}`);
+  }
 
-  return page.features;
+  await Bun.sleep(attempt * 3000);
+
+  return await retried(url, attempt + 1);
 };
 
-export const fetchLayer = async (
+const layerInfo = async (layer: string) => {
+  const info = await readJson<LayerInfo>(await retried(`${layer}?f=json`));
+
+  return {
+    oid:
+      info.objectIdField ??
+      info.fields?.find(({ type }) => type === "esriFieldTypeOID")?.name ??
+      "objectid",
+    page: Math.min(2000, info.maxRecordCount ?? 1000),
+  };
+};
+
+export const fetchLayer = async <P extends GeoJsonProperties>(
   layer: string,
   where: string,
-  fields: string,
-  offset = 0
-): Promise<Features<GeoJsonProperties>> => {
-  const page = await query(layer, where, fields, offset);
+  fields: string
+) => {
+  const { oid, page } = await layerInfo(layer);
 
-  if (page.length < PAGE) {
-    return page;
-  }
+  const { count } = await readJson<{ count: number }>(
+    await retried(
+      `${layer}/query?${new URLSearchParams({ f: "json", returnCountOnly: "true", where })}`
+    )
+  );
 
-  return [...page, ...(await fetchLayer(layer, where, fields, offset + PAGE))];
+  const offsets = Array.from(
+    { length: Math.ceil(count / page) },
+    (_, index) => index * page
+  );
+
+  const features: Features<P> = [];
+
+  const worker = async (): Promise<void> => {
+    const offset = offsets.shift();
+
+    if (offset === undefined) {
+      return;
+    }
+
+    const params = new URLSearchParams({
+      f: "geojson",
+      orderByFields: oid,
+      outFields: fields,
+      outSR: "4326",
+      resultOffset: String(offset),
+      resultRecordCount: String(page),
+      where,
+    });
+
+    const collection = await readJson<FeatureCollection<Geometry | null, P>>(
+      await retried(`${layer}/query?${params}`)
+    );
+
+    features.push(...collection.features);
+    await worker();
+  };
+
+  await Promise.all(Array.from({ length: 4 }, worker));
+
+  return features;
 };
 
 export const LAYERS = {
@@ -64,7 +97,7 @@ export const LAYERS = {
     "https://caltrans-gis.dot.ca.gov/arcgis/rest/services/CHhighway/Vistas/FeatureServer/0",
 };
 
-const linesOf = (geometry: Geometry | null) => {
+export const linesOf = (geometry: Geometry | null) => {
   if (geometry?.type === "LineString") {
     return [geometry.coordinates];
   }
@@ -90,49 +123,18 @@ export interface Pavement {
 }
 
 export const fetchPavement = async () => {
-  const where =
-    "iri IS NOT NULL OR aadt IS NOT NULL OR surface_type IS NOT NULL";
-
-  const countUrl = `${LAYERS.pavement}/query?${new URLSearchParams({ f: "json", returnCountOnly: "true", where })}`;
-  const counted = await fetch(countUrl);
-  const { count } = await readJson<{ count: number }>(counted);
-
-  const offsets = Array.from(
-    { length: Math.ceil(count / PAGE) },
-    (_, index) => index * PAGE
+  const features = await fetchLayer<PavementProperties>(
+    LAYERS.pavement,
+    "iri IS NOT NULL OR aadt IS NOT NULL OR surface_type IS NOT NULL",
+    "iri,aadt,surface_type"
   );
 
-  const sections: Pavement[] = [];
-
-  const worker = async (): Promise<void> => {
-    const offset = offsets.shift();
-
-    if (offset === undefined) {
-      return;
-    }
-
-    const page = await query<PavementProperties>(
-      LAYERS.pavement,
-      where,
-      "iri,aadt,surface_type",
-      offset
-    );
-
-    for (const feature of page) {
-      for (const line of linesOf(feature.geometry)) {
-        sections.push({
-          aadt: feature.properties.aadt,
-          iri: feature.properties.iri,
-          line,
-          unpaved: feature.properties.surface_type === 1,
-        });
-      }
-    }
-
-    await worker();
-  };
-
-  await Promise.all(Array.from({ length: 4 }, worker));
-
-  return sections;
+  return features.flatMap((feature): Pavement[] =>
+    linesOf(feature.geometry).map((line) => ({
+      aadt: feature.properties.aadt,
+      iri: feature.properties.iri,
+      line,
+      unpaved: feature.properties.surface_type === 1,
+    }))
+  );
 };

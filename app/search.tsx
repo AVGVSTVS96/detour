@@ -201,6 +201,30 @@ export const Search = ({
     [index, query, origin]
   );
 
+  useEffect(() => {
+    const [first] = hits;
+
+    const onEnter = (event: KeyboardEvent) => {
+      if (event.key !== "Enter" || first === undefined) {
+        return;
+      }
+
+      event.preventDefault();
+
+      if (first.kind === "road") {
+        onRoad(first.found);
+      } else {
+        onPlace(first.found);
+      }
+    };
+
+    document.addEventListener("keydown", onEnter);
+
+    return () => {
+      document.removeEventListener("keydown", onEnter);
+    };
+  }, [hits, onPlace, onRoad]);
+
   if (query.trim().length < 2) {
     return (
       <div className="flex flex-col gap-6 p-4">

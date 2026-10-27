@@ -4,5 +4,5 @@ node_modules
 next-env.d.ts
 *.tsbuildinfo
 data/.cache
-public/maplibre-gl-worker.mjs
+public/glance
 .env*

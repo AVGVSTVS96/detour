@@ -3,15 +3,14 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "cp node_modules/maplibre-gl/dist/maplibre-gl-worker.mjs public/ && next dev",
-    "build": "cp node_modules/maplibre-gl/dist/maplibre-gl-worker.mjs public/ && next build",
+    "dev": "bun data/glance.ts && next dev",
+    "build": "bun data/glance.ts && next build",
     "data": "bun data/build.ts",
     "check": "next typegen && oxlint && oxfmt --check && tsc",
     "fix": "oxlint --fix; oxfmt",
     "prepare": "if git rev-parse --git-dir >/dev/null 2>&1; then lefthook install; fi"
   },
   "dependencies": {
-    "maplibre-gl": "6.16.0",
     "next": "16.4.3",
     "react": "19.3.1",
     "react-dom": "19.3.1"

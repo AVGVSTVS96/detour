@@ -3,9 +3,12 @@
 @theme {
   --color-paper: #ffffff;
   --color-ink: #0a0a0a;
-  --color-mute: #5c5c5c;
+  --color-mute: #474747;
   --color-hi: #ffe94d;
-  --color-warn: #ff4d2e;
+  --color-smooth: #16a34a;
+  --color-fair: #f59e0b;
+  --color-rough: #dc2626;
+  --color-closed: #991b1b;
   --font-sans:
     -apple-system, BlinkMacSystemFont, "Helvetica Neue", system-ui, sans-serif;
 }
@@ -14,10 +17,20 @@
   :root {
     --color-paper: #0b0b0b;
     --color-ink: #f2f2f2;
-    --color-mute: #a3a3a3;
-    --color-hi: #ffe94d;
+    --color-mute: #b3b3b3;
+    --color-smooth: #22c55e;
+    --color-fair: #fbbf24;
+    --color-rough: #f87171;
     color-scheme: dark;
   }
+}
+
+@utility bg-unknown {
+  background: repeating-linear-gradient(
+    -45deg,
+    var(--color-paper) 0 5px,
+    var(--color-mute) 5px 7px
+  );
 }
 
 html,
@@ -29,15 +42,11 @@ body {
   -webkit-tap-highlight-color: transparent;
 }
 
-@media (prefers-color-scheme: dark) {
-  .maplibregl-ctrl-attrib,
-  .maplibregl-ctrl-attrib-button {
-    background-color: #0b0b0b;
-    color: #a3a3a3;
-    filter: invert(0);
-  }
+input[type="search"]::-webkit-search-cancel-button {
+  display: none;
+}
 
-  .maplibregl-ctrl-attrib a {
-    color: #a3a3a3;
-  }
+::placeholder {
+  color: var(--color-mute);
+  opacity: 1;
 }

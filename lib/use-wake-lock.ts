@@ -1,33 +1,34 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 
-export const useWakeLock = () => {
-  const [on, setOn] = useState(false);
-
+export const useWakeLock = (on: boolean) => {
   useEffect(() => {
     let lock: WakeLockSentinel | null = null;
 
     const acquire = async () => {
-      if (document.visibilityState === "visible") {
+      if (lock === null && document.visibilityState === "visible") {
         lock = await navigator.wakeLock.request("screen").catch(() => null);
+        lock?.addEventListener("release", () => {
+          lock = null;
+        });
       }
     };
 
-    const onVisible = () => {
+    const onWake = () => {
       void acquire();
     };
 
     if (on && "wakeLock" in navigator) {
-      onVisible();
-      document.addEventListener("visibilitychange", onVisible);
+      onWake();
+      document.addEventListener("visibilitychange", onWake);
+      document.addEventListener("pointerdown", onWake);
     }
 
     return () => {
-      document.removeEventListener("visibilitychange", onVisible);
+      document.removeEventListener("visibilitychange", onWake);
+      document.removeEventListener("pointerdown", onWake);
       void lock?.release();
     };
   }, [on]);
-
-  return [on, setOn] as const;
 };

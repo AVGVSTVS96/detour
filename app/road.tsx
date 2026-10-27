@@ -1,49 +1,59 @@
 "use client";
 
+import type { ReactNode } from "react";
+
 import { appleMaps, googleMaps } from "@/lib/rank";
 import type { Ranked } from "@/lib/rank";
-import type { Road } from "@/lib/road";
+import type { PavementSource, Report, Road } from "@/lib/road";
+import {
+  GRADE_NAMES,
+  pavementVerdict,
+  pavingFrom,
+  pavingShares,
+  scenicVerdict,
+  tagsOf,
+  trafficVerdict,
+  twistyVerdict,
+} from "@/lib/verdict";
+import type { Tone, Verdict } from "@/lib/verdict";
 
 const title = (road: Road) => road.name || road.ref;
 
 const subtitle = (road: Road) =>
-  [road.name && road.ref, road.town && `near ${road.town}`]
+  [road.name && road.ref, road.town && `near ${road.town}`, `${road.miles} mi`]
     .filter(Boolean)
     .join(" · ");
 
 const awayText = ({ minutes, estimated }: Ranked) => {
   if (minutes < 2) {
-    return "you're on it";
+    return "here";
   }
 
   const rounded =
     minutes < 60
       ? `${Math.round(minutes)} min`
-      : `${Math.floor(minutes / 60)} h ${Math.round(minutes % 60)} min`;
+      : `${Math.floor(minutes / 60)} h ${Math.round(minutes % 60)}`;
 
-  return `${estimated ? "about " : ""}${rounded} away`;
+  return `${estimated ? "~" : ""}${rounded}`;
 };
 
-const Bar = ({ label, value }: { label: string; value: number | null }) => (
-  <div className="min-w-0 flex-1">
-    <div className="flex justify-between text-[11px] font-semibold tracking-wide uppercase">
-      <span>{label}</span>
-      <span className="text-mute tabular-nums">{value ?? "?"}</span>
-    </div>
-    <div className="mt-0.5 h-1.5 border border-ink">
-      <div className="h-full bg-ink" style={{ width: `${value ?? 0}%` }} />
-    </div>
-  </div>
-);
+const TONES: Record<Tone, string> = {
+  bad: "font-bold text-warn",
+  good: "",
+  plain: "",
+  unknown: "text-mute",
+};
 
-const Bars = ({ road }: { road: Road }) => (
-  <div className="flex gap-3">
-    <Bar label="Twisty" value={road.twisty} />
-    <Bar label="Scenic" value={road.scenic} />
-    <Bar label="Smooth" value={road.smooth} />
-    <Bar label="Quiet" value={road.quiet} />
-  </div>
-);
+const GRADE_COLORS = ["bg-unknown", "bg-smooth", "bg-fair", "bg-warn"];
+
+const ClosureBadge = ({ ranked }: { ranked: Ranked }) =>
+  ranked.closures.length > 0 && (
+    <span className="mt-1 inline-block bg-warn px-1.5 text-xs font-bold text-white">
+      {ranked.closures[0]?.kind === "Full"
+        ? "Closed now"
+        : "Traffic control now"}
+    </span>
+  );
 
 export const RoadRow = ({
   ranked,
@@ -54,7 +64,7 @@ export const RoadRow = ({
   index: number;
   onSelect: (id: string) => void;
 }) => {
-  const { road, closures } = ranked;
+  const { road } = ranked;
 
   return (
     <li className="border-b-2 border-ink">
@@ -65,27 +75,31 @@ export const RoadRow = ({
         }}
         type="button"
       >
-        <span className="w-6 shrink-0 text-lg font-black tabular-nums">
+        <span className="w-6 shrink-0 text-lg leading-6 font-black tabular-nums">
           {index + 1}
         </span>
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-base font-bold">
-            {title(road)}
+          <span className="flex items-baseline justify-between gap-3">
+            <span className="truncate text-base leading-6 font-bold">
+              {title(road)}
+            </span>
+            <span className="shrink-0 font-bold tabular-nums">
+              {awayText(ranked)}
+            </span>
           </span>
           <span className="block truncate text-sm text-mute">
-            {[subtitle(road), `${road.miles} mi long`, awayText(ranked)]
-              .filter(Boolean)
-              .join(" · ")}
+            {subtitle(road)}
           </span>
-          {closures.length > 0 && (
-            <span className="mt-1 inline-block bg-warn px-1.5 text-xs font-bold text-white">
-              {closures[0]?.kind === "Full"
-                ? "Closed now"
-                : "Traffic control now"}
-            </span>
-          )}
-          <span className="mt-2 block">
-            <Bars road={road} />
+          <ClosureBadge ranked={ranked} />
+          <span className="mt-1 block text-sm">
+            {tagsOf(road).map((tag, at) => (
+              <span key={tag.word}>
+                {at > 0 && <span className="text-mute"> · </span>}
+                <span className={`whitespace-nowrap ${TONES[tag.tone]}`}>
+                  {tag.word}
+                </span>
+              </span>
+            ))}
           </span>
         </span>
       </button>
@@ -93,57 +107,119 @@ export const RoadRow = ({
   );
 };
 
-const Fact = ({ label, value }: { label: string; value: string }) => (
-  <div className="border-b border-ink/20 py-2">
-    <div className="text-xs font-semibold tracking-wide text-mute uppercase">
-      {label}
-    </div>
-    <div>{value}</div>
+const Section = ({
+  label,
+  verdict,
+  children,
+}: {
+  label: string;
+  verdict: Verdict;
+  children: ReactNode;
+}) => (
+  <section className="border-t-2 border-ink py-3">
+    <h3 className="flex items-baseline justify-between gap-3">
+      <span className="text-xs font-bold tracking-wide uppercase">{label}</span>
+      <span className={`font-bold ${TONES[verdict.tone]}`}>{verdict.word}</span>
+    </h3>
+    <div className="mt-2 space-y-2 text-sm">{children}</div>
+  </section>
+);
+
+const Meter = ({ value }: { value: number }) => (
+  <div className="h-2 border-2 border-ink">
+    <div className="h-full bg-ink" style={{ width: `${value}%` }} />
   </div>
 );
 
-const grade = (iri: number) => {
-  if (iri < 95) {
-    return "Good";
+const yearsText = ({ from, to }: PavementSource) => {
+  if (from === null || to === null) {
+    return "";
   }
 
-  return iri < 170 ? "Fair" : "Rough";
+  return from === to ? ` ${to}` : ` ${from}–${to}`;
 };
 
-const pavementText = (road: Road) => {
-  const surface =
-    road.paved === null
-      ? " Surface not confirmed paved; could be partly dirt."
-      : "";
+const sourceText = (source: PavementSource) => {
+  const years = yearsText(source);
 
-  if (road.iri === null) {
-    return `No roughness measurement yet.${surface}`;
+  if (source.kind === "measured") {
+    return `Surveyed by ${source.name}${years}, ${source.miles} mi`;
   }
 
-  return `${grade(road.iri)}: roughness ${road.iri} in/mi, where under 95 is good.${surface}`;
+  return source.kind === "riders"
+    ? `Rider reports${years}, ${source.miles} mi`
+    : `OpenStreetMap mappers, ${source.miles} mi`;
 };
 
-const curvesText = (road: Road) => {
-  if (road.curvature === 0) {
-    return "Mostly straight or gentle sweepers";
-  }
+const Quote = ({ report }: { report: Report }) => (
+  <figure className="border-l-4 border-ink pl-2">
+    <blockquote>“{report.text}”</blockquote>
+    <figcaption className="text-xs text-mute">
+      <a className="underline underline-offset-2" href={report.url}>
+        {report.site}
+      </a>
+      {report.year !== null && `, ${report.year}`}
+    </figcaption>
+  </figure>
+);
 
-  return `${Math.round(road.curvature / road.miles).toLocaleString()} curve points per mile (300+ is fun, 1,000+ is very twisty)`;
+const PavementStrip = ({ ranked }: { ranked: Ranked }) => {
+  const { road } = ranked;
+  const runs = pavingFrom(road, ranked.start);
+  const shares = pavingShares(road);
+
+  return (
+    <div>
+      <div className="flex h-4 border-2 border-ink">
+        {runs.map(([miles, grade], index) => (
+          <div
+            className={GRADE_COLORS[grade]}
+            key={`${grade}:${runs.slice(0, index).reduce((sum, [before]) => sum + before, 0)}`}
+            style={{ flexGrow: miles }}
+          />
+        ))}
+      </div>
+      <div className="mt-1 flex justify-between text-xs text-mute tabular-nums">
+        <span>near end</span>
+        <span>{road.miles} mi</span>
+      </div>
+      <div className="mt-1 flex flex-wrap gap-x-3 text-xs">
+        {[1, 2, 3, 0].flatMap((grade) =>
+          (shares[grade] ?? 0) > 0
+            ? [
+                <span className="flex items-center gap-1" key={grade}>
+                  <span
+                    className={`size-2.5 border border-ink ${GRADE_COLORS[grade]}`}
+                  />
+                  {GRADE_NAMES[grade]}{" "}
+                  {Math.round((shares[grade] ?? 0) * 10) / 10} mi
+                </span>,
+              ]
+            : []
+        )}
+      </div>
+    </div>
+  );
 };
 
-const scenicText = (road: Road) => {
-  const parts = [
+const curvesText = (road: Road) =>
+  road.curvature === 0
+    ? "Mostly straight or long sweepers."
+    : `${Math.round(road.curvature / road.miles).toLocaleString()} curve points per mile. 300 is fun, 1,000 is very twisty.`;
+
+const sceneryText = (road: Road) =>
+  [
+    road.low !== null &&
+      road.high !== null &&
+      `Elevation ${road.low.toLocaleString()} to ${road.high.toLocaleString()} ft`,
     road.scenicStatus &&
       `Caltrans scenic highway (${road.scenicStatus.toLowerCase()})`,
-    road.coast && "runs along the coast",
+    road.coast && "Runs along the coast",
     road.viewCount > 0 &&
-      `${road.viewCount} viewpoint${road.viewCount === 1 ? "" : "s"} on the way`,
-  ].filter(Boolean);
-
-  return parts.length === 0
-    ? "No scenic signals in our data yet"
-    : parts.join(", ");
-};
+      `${road.viewCount} viewpoint${road.viewCount === 1 ? "" : "s"} on the way${road.views.length > 0 ? `: ${road.views.join(", ")}` : ""}`,
+  ]
+    .filter(Boolean)
+    .join(". ");
 
 const untilText = (until: number | null) =>
   until === null
@@ -159,8 +235,15 @@ export const RoadDetail = ({
 }) => {
   const { road, closures } = ranked;
 
+  const pavementReports = road.reports.filter(
+    ({ topic }) => topic === "pavement"
+  );
+
+  const otherReports = road.reports.filter(({ topic }) => topic !== "pavement");
+  const [unknown = 0] = pavingShares(road);
+
   return (
-    <section className="min-h-0 flex-1 overflow-y-auto p-3 pb-[max(12px,env(safe-area-inset-bottom))]">
+    <section className="min-h-0 flex-1 overflow-y-auto px-3 pt-3 pb-[max(12px,env(safe-area-inset-bottom))]">
       <button
         className="text-sm font-semibold underline underline-offset-2"
         onClick={onBack}
@@ -172,9 +255,8 @@ export const RoadDetail = ({
         {title(road)}
       </h2>
       <p className="text-mute">
-        {[subtitle(road), `${road.miles} mi long`, awayText(ranked)]
-          .filter(Boolean)
-          .join(" · ")}
+        {subtitle(road)} · {awayText(ranked)}
+        {ranked.minutes >= 2 && " away"}
       </p>
       {closures.map((closure) => (
         <p
@@ -199,27 +281,59 @@ export const RoadDetail = ({
           Google Maps
         </a>
       </div>
-      <p className="mt-1 text-xs text-mute">
+      <p className="mt-1 mb-3 text-xs text-mute">
         Takes you to the near end, then along the whole road.
       </p>
-      <div className="mt-4">
-        <Bars road={road} />
-      </div>
-      <div className="mt-3">
-        <Fact label="Curves" value={curvesText(road)} />
-        <Fact label="Scenic" value={scenicText(road)} />
-        {road.views.length > 0 && (
-          <Fact label="Viewpoints" value={road.views.join(", ")} />
+      <Section label="Pavement" verdict={pavementVerdict(road)}>
+        <PavementStrip ranked={ranked} />
+        {road.pavedBy.map((source) => (
+          <p key={`${source.kind}${source.name}`}>{sourceText(source)}</p>
+        ))}
+        {unknown >= 0.1 && (
+          <p className="text-mute">
+            No pavement data on {Math.round(unknown * 10) / 10} mi.
+          </p>
         )}
-        <Fact label="Pavement" value={pavementText(road)} />
-        <Fact
-          label="Traffic"
-          value={`${road.aadtMeasured ? "" : "about "}${road.aadt.toLocaleString()} cars a day${road.aadtMeasured ? "" : " (guessed from road type)"}`}
-        />
-      </div>
-      <p className="mt-4 text-xs text-mute">
+        {road.paved === null && (
+          <p className="text-mute">Not confirmed paved the whole way.</p>
+        )}
+        {pavementReports.map((report) => (
+          <Quote key={report.url + report.text} report={report} />
+        ))}
+      </Section>
+      <Section label="Curves" verdict={twistyVerdict(road)}>
+        <Meter value={road.twisty} />
+        <p>{curvesText(road)}</p>
+      </Section>
+      <Section label="Scenery" verdict={scenicVerdict(road)}>
+        <Meter value={road.scenic} />
+        {sceneryText(road) && <p>{sceneryText(road)}.</p>}
+      </Section>
+      <Section label="Traffic" verdict={trafficVerdict(road)}>
+        <Meter value={road.quiet} />
+        <p>
+          {road.aadtMeasured ? "" : "About "}
+          {road.aadt.toLocaleString()} cars a day
+          {road.aadtMeasured ? ", counted" : ", guessed from the road type"}.
+        </p>
+      </Section>
+      {otherReports.length > 0 && (
+        <Section
+          label="Riders say"
+          verdict={{
+            tone: "plain",
+            word: `${road.riders} source${road.riders === 1 ? "" : "s"}`,
+          }}
+        >
+          {otherReports.map((report) => (
+            <Quote key={report.url + report.text} report={report} />
+          ))}
+        </Section>
+      )}
+      <p className="mt-2 border-t-2 border-ink pt-3 text-xs text-mute">
         Live closures cover state highways only. Road data © OpenStreetMap
-        contributors, Caltrans, FHWA HPMS. Check conditions before you go.
+        contributors, Caltrans, FHWA HPMS, AWS Terrain Tiles; rider quotes link
+        to their sources. Check conditions before you go.
       </p>
     </section>
   );

@@ -6,6 +6,9 @@
   --color-mute: #5c5c5c;
   --color-hi: #ffe94d;
   --color-warn: #ff4d2e;
+  --color-smooth: #1fae5b;
+  --color-fair: #f5a300;
+  --color-unknown: #d4d4d4;
   --font-sans:
     -apple-system, BlinkMacSystemFont, "Helvetica Neue", system-ui, sans-serif;
 }
@@ -16,6 +19,7 @@
     --color-ink: #f2f2f2;
     --color-mute: #a3a3a3;
     --color-hi: #ffe94d;
+    --color-unknown: #474747;
     color-scheme: dark;
   }
 }

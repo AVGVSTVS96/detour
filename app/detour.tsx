@@ -7,7 +7,7 @@ import { RoadDetail, RoadRow } from "@/app/road";
 import type { Closure } from "@/lib/closure";
 import type { Point } from "@/lib/geo";
 import { readJson } from "@/lib/json";
-import { rank, shortlist } from "@/lib/rank";
+import { inReach, rank, toTime } from "@/lib/rank";
 import { QUALITIES } from "@/lib/road";
 import type { Quality } from "@/lib/road";
 import { useDriveTimes } from "@/lib/use-drive-times";
@@ -51,26 +51,39 @@ const subscribe = (notify: () => void) => {
   };
 };
 
-const OriginNote = ({
+const Origin = ({
   pinned,
   live,
   denied,
+  onStart,
 }: {
   pinned: boolean;
   live: boolean;
   denied: boolean;
+  onStart: () => void;
 }) => {
-  if (pinned) {
-    return "From the spot you picked";
+  if (live && !pinned) {
+    return (
+      <span className="flex items-center gap-1.5 font-semibold">
+        <span className="size-2.5 rounded-full border-2 border-ink bg-hi" />
+        Live
+      </span>
+    );
   }
 
-  if (live) {
-    return "From where you are, live";
+  if (denied && !pinned) {
+    return <span className="text-mute">Location off</span>;
   }
 
-  return denied
-    ? "Location is off. Move the map and tap Search here."
-    : "Tap Use my location, or move the map and tap Search here.";
+  return (
+    <button
+      className="font-semibold underline underline-offset-2"
+      onClick={onStart}
+      type="button"
+    >
+      Use my location
+    </button>
+  );
 };
 
 const Chip = ({
@@ -83,13 +96,15 @@ const Chip = ({
   onClick: () => void;
 }) => (
   <button
-    className={`h-9 shrink-0 border-2 border-ink px-3 text-sm font-semibold ${on ? "bg-hi text-[#0a0a0a]" : "bg-paper"}`}
+    className={`h-9 border-2 border-ink text-sm font-semibold ${on ? "bg-hi text-[#0a0a0a]" : "bg-paper"}`}
     onClick={onClick}
     type="button"
   >
     {label}
   </button>
 );
+
+const PAGE = 30;
 
 export const Detour = () => {
   const [tracking, setTracking] = useState(false);
@@ -98,6 +113,7 @@ export const Detour = () => {
   const [center, setCenter] = useState<Point | null>(null);
   const [qualities, setQualities] = useState<Quality[]>(["twisty", "scenic"]);
   const [reach, setReach] = useState(30);
+  const [shown, setShown] = useState(PAGE);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [closures, setClosures] = useState<Closure[]>([]);
   const [screenOn, setScreenOn] = useWakeLock();
@@ -132,13 +148,13 @@ export const Detour = () => {
     () =>
       lon === null || lat === null
         ? []
-        : shortlist(roads, [lon, lat], qualities, reach),
+        : inReach(roads, [lon, lat], qualities, reach),
     [roads, lon, lat, qualities, reach]
   );
 
   const targets = useMemo(
     () =>
-      candidates.map(({ road, end: [start] }) => ({
+      toTime(candidates).map(({ road, end: [start] }) => ({
         id: road.id,
         point: start,
       })),
@@ -151,8 +167,8 @@ export const Detour = () => {
     () =>
       lon === null || lat === null
         ? []
-        : rank(candidates, [lon, lat], qualities, reach, closures, times),
-    [candidates, lon, lat, qualities, reach, closures, times]
+        : rank(candidates, [lon, lat], reach, closures, times),
+    [candidates, lon, lat, reach, closures, times]
   );
 
   const selected = ranked.find(({ road }) => road.id === selectedId) ?? null;
@@ -220,7 +236,7 @@ export const Detour = () => {
         />
       ) : (
         <section className="flex min-h-0 flex-1 flex-col">
-          <div className="flex gap-2 overflow-x-auto border-b-2 border-ink p-3">
+          <div className="grid grid-cols-4 gap-2 border-b-2 border-ink p-3">
             {QUALITIES.map((quality) => (
               <Chip
                 key={quality}
@@ -231,44 +247,47 @@ export const Detour = () => {
                 }}
               />
             ))}
-            <span className="w-1 shrink-0" />
-            {REACHES.map((minutes) => (
-              <Chip
-                key={minutes}
-                label={`${minutes} min`}
-                on={reach === minutes}
-                onClick={() => {
-                  setReach(minutes);
-                }}
-              />
-            ))}
           </div>
           <div className="flex items-center justify-between gap-3 border-b-2 border-ink px-3 py-2 text-sm">
-            <span className="text-mute">
-              <OriginNote
-                denied={location.status === "denied"}
-                live={live !== null}
-                pinned={pinned !== null}
-              />
-            </span>
-            {(pinned !== null || !tracking) && (
-              <button
-                className="shrink-0 font-semibold underline underline-offset-2"
-                onClick={start}
-                type="button"
+            <label className="flex items-center gap-1">
+              <span>
+                {origin && !loading ? `${ranked.length} drives` : "Drives"}{" "}
+                within
+              </span>
+              <select
+                className="appearance-none bg-transparent font-semibold underline underline-offset-2"
+                onChange={(event) => {
+                  setReach(Number(event.target.value));
+                  setShown(PAGE);
+                }}
+                value={reach}
               >
-                Use my location
-              </button>
-            )}
+                {REACHES.map((minutes) => (
+                  <option key={minutes} value={minutes}>
+                    {minutes} min
+                  </option>
+                ))}
+              </select>
+            </label>
+            <Origin
+              denied={location.status === "denied"}
+              live={live !== null}
+              onStart={start}
+              pinned={pinned !== null}
+            />
           </div>
           <ol className="min-h-0 flex-1 overflow-y-auto pb-[env(safe-area-inset-bottom)]">
-            {origin && !loading && ranked.length === 0 && (
+            {!origin && (
               <li className="p-4 text-mute">
-                No good roads we know within {reach} minutes. Try a longer
-                drive.
+                Tap Use my location, or move the map and tap Search here.
               </li>
             )}
-            {ranked.slice(0, 40).map((item, index) => (
+            {origin && !loading && ranked.length === 0 && (
+              <li className="p-4 text-mute">
+                No drives we know within {reach} minutes. Try a longer reach.
+              </li>
+            )}
+            {ranked.slice(0, shown).map((item, index) => (
               <RoadRow
                 index={index}
                 key={item.road.id}
@@ -276,6 +295,20 @@ export const Detour = () => {
                 ranked={item}
               />
             ))}
+            {ranked.length > shown && (
+              <li>
+                <button
+                  className="w-full p-4 text-left font-semibold underline underline-offset-2"
+                  onClick={() => {
+                    setShown(shown + PAGE);
+                  }}
+                  type="button"
+                >
+                  Show {Math.min(PAGE, ranked.length - shown)} more of{" "}
+                  {ranked.length - shown}
+                </button>
+              </li>
+            )}
           </ol>
         </section>
       )}

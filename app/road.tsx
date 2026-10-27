@@ -332,8 +332,9 @@ export const RoadDetail = ({
       )}
       <p className="mt-2 border-t-2 border-ink pt-3 text-xs text-mute">
         Live closures cover state highways only. Road data © OpenStreetMap
-        contributors, Caltrans, FHWA HPMS, AWS Terrain Tiles; rider quotes link
-        to their sources. Check conditions before you go.
+        contributors, Caltrans, FHWA, city and county pavement surveys, AWS
+        Terrain Tiles; rider quotes link to their sources. Check conditions
+        before you go.
       </p>
     </section>
   );

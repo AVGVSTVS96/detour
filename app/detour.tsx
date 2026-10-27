@@ -251,8 +251,9 @@ export const Detour = () => {
           <div className="flex items-center justify-between gap-3 border-b-2 border-ink px-3 py-2 text-sm">
             <label className="flex items-center gap-1">
               <span>
-                {origin && !loading ? `${ranked.length} drives` : "Drives"}{" "}
-                within
+                {origin && !loading
+                  ? `${ranked.length} drives within`
+                  : "Drives within"}
               </span>
               <select
                 className="appearance-none bg-transparent font-semibold underline underline-offset-2"

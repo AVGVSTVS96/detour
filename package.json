@@ -3,8 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "cp node_modules/maplibre-gl/dist/maplibre-gl-worker.mjs public/ && next dev",
-    "build": "cp node_modules/maplibre-gl/dist/maplibre-gl-worker.mjs public/ && next build",
+    "dev": "cp node_modules/maplibre-gl/dist/maplibre-gl-worker.mjs public/ && bun data/search.ts && next dev",
+    "build": "cp node_modules/maplibre-gl/dist/maplibre-gl-worker.mjs public/ && bun data/search.ts && next build",
     "data": "bun data/build.ts",
     "check": "next typegen && oxlint && oxfmt --check && tsc",
     "fix": "oxlint --fix; oxfmt",

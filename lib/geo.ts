@@ -62,19 +62,17 @@ export const CELL_DEGREES = 0.5;
 export const cellOf = ([lon, lat]: Point) =>
   `${Math.floor(lon / CELL_DEGREES)}_${Math.floor(lat / CELL_DEGREES)}`;
 
-export const cellsAround = ([lon, lat]: Point, meters: number) => {
-  const dLat = meters / (EARTH * RADIANS);
-  const dLon = dLat / Math.cos(lat * RADIANS);
+export const cellsIn = ([west, south]: Point, [east, north]: Point) => {
   const cells: string[] = [];
 
   for (
-    let x = Math.floor((lon - dLon) / CELL_DEGREES);
-    x <= Math.floor((lon + dLon) / CELL_DEGREES);
+    let x = Math.floor(west / CELL_DEGREES);
+    x <= Math.floor(east / CELL_DEGREES);
     x += 1
   ) {
     for (
-      let y = Math.floor((lat - dLat) / CELL_DEGREES);
-      y <= Math.floor((lat + dLat) / CELL_DEGREES);
+      let y = Math.floor(south / CELL_DEGREES);
+      y <= Math.floor(north / CELL_DEGREES);
       y += 1
     ) {
       cells.push(`${x}_${y}`);
@@ -82,4 +80,11 @@ export const cellsAround = ([lon, lat]: Point, meters: number) => {
   }
 
   return cells;
+};
+
+export const cellsAround = ([lon, lat]: Point, meters: number) => {
+  const dLat = meters / (EARTH * RADIANS);
+  const dLon = dLat / Math.cos(lat * RADIANS);
+
+  return cellsIn([lon - dLon, lat - dLat], [lon + dLon, lat + dLat]);
 };

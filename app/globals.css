@@ -3,12 +3,12 @@
 @theme {
   --color-paper: #ffffff;
   --color-ink: #0a0a0a;
-  --color-mute: #5c5c5c;
+  --color-mute: #474747;
   --color-hi: #ffe94d;
-  --color-warn: #ff4d2e;
-  --color-smooth: #1fae5b;
-  --color-fair: #f5a300;
-  --color-unknown: #d4d4d4;
+  --color-smooth: #0a0a0a;
+  --color-fair: #e38b00;
+  --color-rough: #e5341b;
+  --color-unknown: #8c8c8c;
   --font-sans:
     -apple-system, BlinkMacSystemFont, "Helvetica Neue", system-ui, sans-serif;
 }
@@ -17,9 +17,10 @@
   :root {
     --color-paper: #0b0b0b;
     --color-ink: #f2f2f2;
-    --color-mute: #a3a3a3;
-    --color-hi: #ffe94d;
-    --color-unknown: #474747;
+    --color-mute: #ababab;
+    --color-smooth: #f2f2f2;
+    --color-fair: #ffb020;
+    --color-rough: #ff5a3c;
     color-scheme: dark;
   }
 }
@@ -33,15 +34,6 @@ body {
   -webkit-tap-highlight-color: transparent;
 }
 
-@media (prefers-color-scheme: dark) {
-  .maplibregl-ctrl-attrib,
-  .maplibregl-ctrl-attrib-button {
-    background-color: #0b0b0b;
-    color: #a3a3a3;
-    filter: invert(0);
-  }
-
-  .maplibregl-ctrl-attrib a {
-    color: #a3a3a3;
-  }
+input[type="search"]::-webkit-search-cancel-button {
+  appearance: none;
 }

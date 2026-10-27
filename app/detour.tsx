@@ -1,18 +1,22 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { useState } from "react";
+import type { UIEvent } from "react";
 
-import { RoadDetail, RoadRow } from "@/app/road";
-import type { Closure } from "@/lib/closure";
+import type { Camera, View } from "@/app/map-view";
+import { Card, Story } from "@/app/road";
+import { Results } from "@/app/search";
+import { cellOf, distance, lineDistance } from "@/lib/geo";
 import type { Point } from "@/lib/geo";
-import { readJson } from "@/lib/json";
-import { inReach, rank, toTime } from "@/lib/rank";
+import type { Ranked } from "@/lib/rank";
 import { QUALITIES } from "@/lib/road";
-import type { Quality } from "@/lib/road";
-import { useDriveTimes } from "@/lib/use-drive-times";
-import { useLocation } from "@/lib/use-location";
-import { useRoads } from "@/lib/use-roads";
+import type { Quality, Road } from "@/lib/road";
+import type { Listing } from "@/lib/search";
+import { useDrives } from "@/lib/use-drives";
+import { useOrigin } from "@/lib/use-origin";
+import { loadCell, loadIndex } from "@/lib/use-roads";
+import { useSearch } from "@/lib/use-search";
 import { useWakeLock } from "@/lib/use-wake-lock";
 
 const MapView = dynamic(
@@ -24,294 +28,446 @@ const MapView = dynamic(
   { ssr: false }
 );
 
-const REACHES = [15, 30, 60, 90];
+const REACHES = [15, 30, 60, 90, 120];
 
-const FASTEST = 26.8;
+const CARDS = 20;
 
-const rounded = (point: Point): Point => [
-  Math.round(point[0] * 100) / 100,
-  Math.round(point[1] * 100) / 100,
+const AWAY = 15_000;
+
+const GAP = 8;
+
+const CHIP =
+  "flex h-11 items-center justify-center border-2 border-ink font-semibold";
+
+const around = ([lon, lat]: Point): Point[] => [
+  [lon - 0.25, lat - 0.2],
+  [lon + 0.25, lat + 0.2],
 ];
 
-const pointFromSearch = (search: string): Point | null => {
-  const at = new URLSearchParams(search).get("at")?.split(",").map(Number);
-
-  if (at?.length === 2 && at.every(Number.isFinite)) {
-    return [at[1] ?? 0, at[0] ?? 0];
-  }
-
-  return null;
-};
-
-const subscribe = (notify: () => void) => {
-  window.addEventListener("popstate", notify);
-
-  return () => {
-    window.removeEventListener("popstate", notify);
-  };
-};
-
-const Origin = ({
-  pinned,
-  live,
-  denied,
-  onStart,
-}: {
-  pinned: boolean;
-  live: boolean;
-  denied: boolean;
-  onStart: () => void;
-}) => {
-  if (live && !pinned) {
-    return (
-      <span className="flex items-center gap-1.5 font-semibold">
-        <span className="size-2.5 rounded-full border-2 border-ink bg-hi" />
-        Live
-      </span>
-    );
-  }
-
-  if (denied && !pinned) {
-    return <span className="text-mute">Location off</span>;
-  }
+const findRoad = async (listing: Listing) => {
+  const [name, ref, , at] = listing;
+  const { build } = await loadIndex();
+  const roads = await loadCell(build, cellOf(at));
 
   return (
-    <button
-      className="font-semibold underline underline-offset-2"
-      onClick={onStart}
-      type="button"
-    >
-      Use my location
-    </button>
+    roads
+      .filter((road) => road.name === name && road.ref === ref)
+      .toSorted((a, b) => lineDistance(at, a.line) - lineDistance(at, b.line))
+      .at(0) ?? null
   );
 };
 
-const Chip = ({
-  on,
-  label,
-  onClick,
-}: {
-  on: boolean;
-  label: string;
-  onClick: () => void;
-}) => (
-  <button
-    className={`h-9 border-2 border-ink text-sm font-semibold ${on ? "bg-hi text-[#0a0a0a]" : "bg-paper"}`}
-    onClick={onClick}
-    type="button"
-  >
-    {label}
-  </button>
+const Legend = () => (
+  <ul className="flex w-fit items-center gap-3 border-2 border-ink bg-paper px-2 py-1 leading-6 font-semibold">
+    <li className="flex items-center gap-1">
+      <span aria-hidden className="h-1 w-3 bg-smooth" />
+      Smooth
+    </li>
+    <li className="flex items-center gap-1">
+      <span aria-hidden className="h-1 w-3 bg-fair" />
+      Fair
+    </li>
+    <li className="flex items-center gap-1">
+      <span aria-hidden className="h-1 w-3 bg-rough" />
+      Rough
+    </li>
+    <li className="flex items-center gap-1">
+      <span
+        aria-hidden
+        className="h-1 w-3 border-t-4 border-dotted border-unknown"
+      />
+      No data
+    </li>
+  </ul>
 );
 
-const PAGE = 30;
+const SunIcon = () => (
+  <svg aria-hidden className="size-6" fill="none" viewBox="0 0 24 24">
+    <circle cx="12" cy="12" r="4.5" stroke="currentColor" strokeWidth="2.5" />
+    <path
+      d="M12 1.5v3M12 19.5v3M1.5 12h3M19.5 12h3M4.6 4.6l2.1 2.1M17.3 17.3l2.1 2.1M4.6 19.4l2.1-2.1M17.3 6.7l2.1-2.1"
+      stroke="currentColor"
+      strokeLinecap="square"
+      strokeWidth="2.5"
+    />
+  </svg>
+);
 
-export const Detour = () => {
-  const [tracking, setTracking] = useState(false);
-  const location = useLocation(tracking);
-  const [picked, setPicked] = useState<Point | null | undefined>();
-  const [center, setCenter] = useState<Point | null>(null);
-  const [qualities, setQualities] = useState<Quality[]>(["twisty", "scenic"]);
-  const [reach, setReach] = useState(30);
-  const [shown, setShown] = useState(PAGE);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [closures, setClosures] = useState<Closure[]>([]);
-  const [screenOn, setScreenOn] = useWakeLock();
+const Reach = ({
+  reach,
+  onReach,
+}: {
+  reach: number;
+  onReach: (minutes: number) => void;
+}) => (
+  <label className="relative shrink-0">
+    <span className="sr-only">How far to drive</span>
+    <select
+      className={`${CHIP} h-12 appearance-none bg-paper pr-7 pl-3`}
+      onChange={(event) => {
+        onReach(Number(event.target.value));
+      }}
+      value={reach}
+    >
+      {REACHES.map((minutes) => (
+        <option key={minutes} value={minutes}>
+          {minutes < 60 ? `${minutes} min` : `${minutes / 60} h`}
+        </option>
+      ))}
+    </select>
+    <span
+      aria-hidden
+      className="pointer-events-none absolute top-3 right-2.5 font-bold"
+    >
+      ▾
+    </span>
+  </label>
+);
 
-  const search = useSyncExternalStore(
-    subscribe,
-    () => window.location.search,
-    () => ""
-  );
+const Picker = ({
+  qualities,
+  onToggle,
+}: {
+  qualities: Quality[];
+  onToggle: (quality: Quality) => void;
+}) => (
+  <div className="grid grid-cols-4 gap-2 px-3">
+    {QUALITIES.map((quality) => (
+      <button
+        aria-pressed={qualities.includes(quality)}
+        className={`${CHIP} ${qualities.includes(quality) ? "bg-ink text-paper" : "bg-paper"}`}
+        key={quality}
+        onClick={() => {
+          onToggle(quality);
+        }}
+        type="button"
+      >
+        {quality[0].toUpperCase() + quality.slice(1)}
+      </button>
+    ))}
+  </div>
+);
 
-  const pinned = picked === undefined ? pointFromSearch(search) : picked;
+const Rail = ({
+  ranked,
+  focus,
+  onFocus,
+  onOpen,
+}: {
+  ranked: Ranked[];
+  focus: number;
+  onFocus: (index: number) => void;
+  onOpen: (road: Road) => void;
+}) => {
+  const onScroll = (event: UIEvent<HTMLDivElement>) => {
+    const rail = event.currentTarget;
+    const width = rail.firstElementChild?.getBoundingClientRect().width ?? 1;
+    const index = Math.round(rail.scrollLeft / (width + GAP));
 
-  const live = location.status === "live" ? location.point : null;
-  const origin = pinned ?? live;
-  const [lon, lat] = origin ? rounded(origin) : [null, null];
-  const { roads, loading } = useRoads(lon, lat, reach * 60 * FASTEST);
-
-  useEffect(() => {
-    void fetch("/api/closures")
-      .then(async (response) =>
-        response.ok ? await readJson<Closure[]>(response) : []
-      )
-      .then(setClosures);
-  }, []);
-
-  const here = useMemo<Point | null>(
-    () => (lon === null || lat === null ? null : [lon, lat]),
-    [lon, lat]
-  );
-
-  const candidates = useMemo(
-    () =>
-      lon === null || lat === null
-        ? []
-        : inReach(roads, [lon, lat], qualities, reach),
-    [roads, lon, lat, qualities, reach]
-  );
-
-  const targets = useMemo(
-    () =>
-      toTime(candidates).map(({ road, end: [start] }) => ({
-        id: road.id,
-        point: start,
-      })),
-    [candidates]
-  );
-
-  const times = useDriveTimes(here, targets);
-
-  const ranked = useMemo(
-    () =>
-      lon === null || lat === null
-        ? []
-        : rank(candidates, [lon, lat], reach, closures, times),
-    [candidates, lon, lat, reach, closures, times]
-  );
-
-  const selected = ranked.find(({ road }) => road.id === selectedId) ?? null;
-
-  const toggle = (quality: Quality) => {
-    setQualities((current) =>
-      current.includes(quality)
-        ? current.filter((item) => item !== quality)
-        : [...current, quality]
-    );
-  };
-
-  const start = () => {
-    setTracking(true);
-    setPicked(null);
-    setScreenOn(true);
+    if (index !== focus) {
+      onFocus(index);
+    }
   };
 
   return (
-    <main className="flex h-dvh flex-col">
-      <div className="relative h-[46dvh] shrink-0 border-b-2 border-ink">
-        <MapView
-          onMove={setCenter}
-          onSelect={setSelectedId}
-          origin={origin}
-          ranked={ranked}
-          selected={selected}
+    <div
+      className="flex snap-x snap-mandatory [scrollbar-width:none] gap-2 overflow-x-auto scroll-smooth px-3"
+      onScroll={onScroll}
+    >
+      {ranked.slice(0, CARDS).map((item, index) => (
+        <Card
+          key={item.road.id}
+          onOpen={() => {
+            onOpen(item.road);
+          }}
+          rank={index + 1}
+          ranked={item}
         />
-        <header className="pointer-events-none absolute inset-x-0 top-0 flex items-start justify-between gap-2 p-3 pt-[max(12px,env(safe-area-inset-top))]">
-          <h1 className="pointer-events-auto border-2 border-ink bg-paper px-2 py-0.5 text-xl font-black tracking-tight">
-            detour
-          </h1>
-          <div className="pointer-events-auto flex gap-2">
-            {center && (
-              <button
-                className="h-9 border-2 border-ink bg-paper px-3 text-sm font-semibold"
-                onClick={() => {
-                  setPicked(center);
-                  setSelectedId(null);
-                }}
-                type="button"
-              >
-                Search here
-              </button>
-            )}
-            <button
-              className={`h-9 border-2 border-ink px-3 text-sm font-semibold ${screenOn ? "bg-hi text-[#0a0a0a]" : "bg-paper"}`}
-              onClick={() => {
-                setScreenOn(!screenOn);
-              }}
-              type="button"
-            >
-              {screenOn ? "Screen stays on" : "Keep screen on"}
-            </button>
-          </div>
-        </header>
+      ))}
+    </div>
+  );
+};
+
+const statusText = (
+  origin: ReturnType<typeof useOrigin>,
+  loading: boolean,
+  reach: number
+) => {
+  if (origin.denied && !origin.pin) {
+    return "Location is off. Search a town, or move the map and tap Best drives here.";
+  }
+
+  if (!origin.here) {
+    return origin.tracking
+      ? "Finding you…"
+      : "Use your location to see the best drives near you, or search a town.";
+  }
+
+  return loading
+    ? "Loading drives…"
+    : `No good roads we know within ${reach} minutes. Try a longer drive.`;
+};
+
+const cameraFor = (
+  story: Ranked | null,
+  here: Point | null,
+  loading: boolean,
+  ranked: Ranked[],
+  focus: number,
+  key: string
+): Camera | null => {
+  const focused = ranked.at(focus);
+
+  if (story) {
+    return { key: `story:${story.road.id}`, points: story.road.line };
+  }
+
+  if (here === null) {
+    return null;
+  }
+
+  if (loading && ranked.length === 0) {
+    return { key: `go:${here.join(",")}`, points: around(here) };
+  }
+
+  if (focus > 0 && focused) {
+    return {
+      key: `card:${focused.road.id}`,
+      points: [here, ...focused.road.line],
+    };
+  }
+
+  return {
+    key: `start:${key}`,
+    points: [here, ...ranked.slice(0, 5).flatMap(({ road }) => road.line)],
+  };
+};
+
+const Sheet = ({
+  search,
+  origin,
+  reach,
+  qualities,
+  ranked,
+  loading,
+  focus,
+  onReach,
+  onToggle,
+  onFocus,
+  onOpen,
+  onFollow,
+}: {
+  search: ReturnType<typeof useSearch>;
+  origin: ReturnType<typeof useOrigin>;
+  reach: number;
+  qualities: Quality[];
+  ranked: Ranked[];
+  loading: boolean;
+  focus: { index: number; key: string };
+  onReach: (minutes: number) => void;
+  onToggle: (quality: Quality) => void;
+  onFocus: (index: number) => void;
+  onOpen: (road: Road | null) => void;
+  onFollow: () => void;
+}) => {
+  const handleFocus = search.start;
+  const handleCancel = search.close;
+
+  return (
+    <section
+      className={`flex flex-col gap-2 border-ink bg-paper pt-3 pb-[max(12px,env(safe-area-inset-bottom))] ${search.open ? "absolute inset-0 z-20 pt-[max(12px,env(safe-area-inset-top))]" : "shrink-0 border-t-2"}`}
+    >
+      <div className="flex gap-2 px-3">
+        <input
+          aria-label="Search a road or town"
+          autoComplete="off"
+          className="h-12 min-w-0 flex-1 border-2 border-ink bg-paper px-3 text-base placeholder:text-mute"
+          enterKeyHint="search"
+          onChange={(event) => {
+            search.setQuery(event.target.value);
+          }}
+          onFocus={handleFocus}
+          placeholder="Search a road or town"
+          type="search"
+          value={search.query}
+        />
+        {search.open ? (
+          <button
+            className="h-12 shrink-0 px-2 font-bold underline underline-offset-4"
+            onClick={handleCancel}
+            type="button"
+          >
+            Cancel
+          </button>
+        ) : (
+          <Reach onReach={onReach} reach={reach} />
+        )}
       </div>
 
-      {selected ? (
-        <RoadDetail
-          onBack={() => {
-            setSelectedId(null);
-          }}
-          ranked={selected}
-        />
+      {search.open ? (
+        <div className="min-h-0 flex-1 overflow-y-auto border-t-2 border-ink">
+          <Results
+            hits={search.hits}
+            onRoad={(listing) => {
+              search.close();
+              void findRoad(listing).then(onOpen);
+            }}
+            onTown={(town) => {
+              search.close();
+              onOpen(null);
+              origin.pick({ name: town.name, point: town.at });
+            }}
+            query={search.query}
+            ready={search.ready}
+          />
+        </div>
       ) : (
-        <section className="flex min-h-0 flex-1 flex-col">
-          <div className="grid grid-cols-4 gap-2 border-b-2 border-ink p-3">
-            {QUALITIES.map((quality) => (
-              <Chip
-                key={quality}
-                label={quality[0].toUpperCase() + quality.slice(1)}
-                on={qualities.includes(quality)}
-                onClick={() => {
-                  toggle(quality);
-                }}
-              />
-            ))}
-          </div>
-          <div className="flex items-center justify-between gap-3 border-b-2 border-ink px-3 py-2 text-sm">
-            <label className="flex items-center gap-1">
-              <span>
-                {origin && !loading
-                  ? `${ranked.length} drives within`
-                  : "Drives within"}
+        <>
+          <Picker onToggle={onToggle} qualities={qualities} />
+          {(origin.pin !== null || origin.live === null) && (
+            <div className="flex min-h-11 items-center justify-between gap-2 px-3">
+              <span className="min-w-0 truncate">
+                {origin.pin ? `From ${origin.pin.name}` : "Where are you?"}
               </span>
-              <select
-                className="appearance-none bg-transparent font-semibold underline underline-offset-2"
-                onChange={(event) => {
-                  setReach(Number(event.target.value));
-                  setShown(PAGE);
-                }}
-                value={reach}
+              <button
+                className="h-11 shrink-0 font-bold underline underline-offset-4"
+                onClick={onFollow}
+                type="button"
               >
-                {REACHES.map((minutes) => (
-                  <option key={minutes} value={minutes}>
-                    {minutes} min
-                  </option>
-                ))}
-              </select>
-            </label>
-            <Origin
-              denied={location.status === "denied"}
-              live={live !== null}
-              onStart={start}
-              pinned={pinned !== null}
+                Use my location
+              </button>
+            </div>
+          )}
+          {ranked.length > 0 ? (
+            <Rail
+              focus={focus.index}
+              key={focus.key}
+              onFocus={onFocus}
+              onOpen={onOpen}
+              ranked={ranked}
             />
-          </div>
-          <ol className="min-h-0 flex-1 overflow-y-auto pb-[env(safe-area-inset-bottom)]">
-            {!origin && (
-              <li className="p-4 text-mute">
-                Tap Use my location, or move the map and tap Search here.
-              </li>
-            )}
-            {origin && !loading && ranked.length === 0 && (
-              <li className="p-4 text-mute">
-                No drives we know within {reach} minutes. Try a longer reach.
-              </li>
-            )}
-            {ranked.slice(0, shown).map((item, index) => (
-              <RoadRow
-                index={index}
-                key={item.road.id}
-                onSelect={setSelectedId}
-                ranked={item}
-              />
-            ))}
-            {ranked.length > shown && (
-              <li>
-                <button
-                  className="w-full p-4 text-left font-semibold underline underline-offset-2"
-                  onClick={() => {
-                    setShown(shown + PAGE);
-                  }}
-                  type="button"
-                >
-                  Show {Math.min(PAGE, ranked.length - shown)} more of{" "}
-                  {ranked.length - shown}
-                </button>
-              </li>
-            )}
-          </ol>
+          ) : (
+            <p className="mx-3 flex h-[212px] items-center border-2 border-ink p-3">
+              {statusText(origin, loading, reach)}
+            </p>
+          )}
+        </>
+      )}
+    </section>
+  );
+};
+
+export const Detour = () => {
+  const origin = useOrigin();
+  const { here } = origin;
+  const [qualities, setQualities] = useState<Quality[]>(["twisty", "scenic"]);
+  const [reach, setReach] = useState(30);
+  const [view, setView] = useState<View | null>(null);
+  const [focus, setFocus] = useState({ index: 0, key: "" });
+  const [opened, setOpened] = useState<Road | null>(null);
+  const [recenter, setRecenter] = useState(0);
+  const [screenOn, setScreenOn] = useWakeLock();
+  const search = useSearch(here);
+
+  const { drawn, loading, ranked, story } = useDrives({
+    here,
+    opened,
+    qualities,
+    reach,
+    seen: view,
+  });
+
+  const cardsKey = `${here?.join(",")}|${qualities.join(",")}|${reach}|${recenter}`;
+  const focusIndex = focus.key === cardsKey ? focus.index : 0;
+  const focused = ranked.at(focusIndex) ?? null;
+  const camera = cameraFor(story, here, loading, ranked, focusIndex, cardsKey);
+  const showMap = camera !== null || (origin.settled && here === null);
+
+  const away =
+    view?.user === true &&
+    view.zoom >= 8 &&
+    (here === null || distance(view.center, here) > AWAY);
+
+  return (
+    <main className="flex h-dvh flex-col overflow-hidden">
+      <div className="relative min-h-0 flex-1">
+        {showMap && (
+          <MapView
+            camera={camera}
+            drawn={drawn}
+            focusId={story?.road.id ?? focused?.road.id ?? null}
+            onSelect={(id) => {
+              setOpened(drawn.find(({ road }) => road.id === id)?.road ?? null);
+            }}
+            onView={setView}
+            origin={here}
+            story={story !== null}
+          />
+        )}
+        <header className="pointer-events-none absolute inset-x-0 top-0 p-3 pt-[max(12px,env(safe-area-inset-top))]">
+          <h1 className="sr-only">detour</h1>
+          <Legend />
+        </header>
+        <button
+          aria-label="Keep screen on"
+          aria-pressed={screenOn}
+          className={`absolute right-3 bottom-3 flex size-11 items-center justify-center border-2 border-ink ${screenOn ? "bg-hi text-[#0a0a0a]" : "bg-paper"}`}
+          onClick={() => {
+            setScreenOn(!screenOn);
+          }}
+          type="button"
+        >
+          <SunIcon />
+        </button>
+        {away && view !== null && story === null && (
+          <button
+            className="absolute bottom-3 left-1/2 h-11 -translate-x-1/2 border-2 border-ink bg-hi px-4 font-bold text-[#0a0a0a]"
+            onClick={() => {
+              origin.pick({ name: "the map", point: view.center });
+              setView({ ...view, user: false });
+            }}
+            type="button"
+          >
+            Best drives here
+          </button>
+        )}
+      </div>
+
+      {story ? (
+        <section className="flex h-[60dvh] shrink-0 flex-col border-t-2 border-ink bg-paper">
+          <Story
+            onBack={() => {
+              setOpened(null);
+            }}
+            ranked={story}
+          />
         </section>
+      ) : (
+        <Sheet
+          focus={{ index: focusIndex, key: cardsKey }}
+          loading={loading}
+          onFocus={(index) => {
+            setFocus({ index, key: cardsKey });
+          }}
+          onFollow={() => {
+            origin.follow();
+            setRecenter((count) => count + 1);
+          }}
+          onOpen={setOpened}
+          onReach={setReach}
+          onToggle={(quality) => {
+            setQualities((current) =>
+              current.includes(quality)
+                ? current.filter((item) => item !== quality)
+                : [...current, quality]
+            );
+          }}
+          origin={origin}
+          qualities={qualities}
+          ranked={ranked}
+          reach={reach}
+          search={search}
+        />
       )}
     </main>
   );

@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 
-import { cellsAround } from "@/lib/geo";
 import { readJson } from "@/lib/json";
 import type { Road, RoadIndex } from "@/lib/road";
 
@@ -15,7 +14,7 @@ const readIndex = async () => {
   return await readJson<RoadIndex>(response);
 };
 
-const loadIndex = async () => {
+export const loadIndex = async () => {
   index ??= readIndex();
 
   return await index;
@@ -31,7 +30,7 @@ const readCell = async (path: string) => {
   return await readJson<Road[]>(response);
 };
 
-const cell = async (build: string, key: string) => {
+export const loadCell = async (build: string, key: string) => {
   const path = `/roads/${build}/${key}.json`;
   const request = loaded.get(path) ?? readCell(path);
   loaded.set(path, request);
@@ -39,41 +38,36 @@ const cell = async (build: string, key: string) => {
   return await request;
 };
 
-export const useRoads = (
-  lon: number | null,
-  lat: number | null,
-  reach: number
-) => {
+export const useRoads = (keys: string[]) => {
   const [result, setResult] = useState<{ key: string; roads: Road[] }>({
     key: "",
     roads: [],
   });
 
-  const key = lon === null || lat === null ? null : `${lon},${lat},${reach}`;
+  const key = keys.toSorted().join(" ");
 
   useEffect(() => {
     let cancelled = false;
 
     const load = async () => {
-      if (key === null || lon === null || lat === null) {
+      if (key === "") {
         return;
       }
 
       const { build, cells } = await loadIndex();
       const available = new Set(cells);
 
-      const keys = cellsAround([lon, lat], reach).filter((item) =>
-        available.has(item)
+      const lists = await Promise.all(
+        key
+          .split(" ")
+          .filter((item) => available.has(item))
+          .map(async (item) => await loadCell(build, item))
       );
 
       const byId = new Map<string, Road>();
 
-      for (const list of await Promise.all(
-        keys.map(async (item) => await cell(build, item))
-      )) {
-        for (const road of list) {
-          byId.set(road.id, road);
-        }
+      for (const road of lists.flat()) {
+        byId.set(road.id, road);
       }
 
       if (!cancelled) {
@@ -82,7 +76,7 @@ export const useRoads = (
     };
 
     load().catch(() => {
-      if (key !== null && !cancelled) {
+      if (!cancelled) {
         setResult((current) => ({ key, roads: current.roads }));
       }
     });
@@ -90,7 +84,7 @@ export const useRoads = (
     return () => {
       cancelled = true;
     };
-  }, [key, lon, lat, reach]);
+  }, [key]);
 
-  return { loading: key !== null && result.key !== key, roads: result.roads };
+  return { loading: key !== "" && result.key !== key, roads: result.roads };
 };

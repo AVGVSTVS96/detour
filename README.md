@@ -1,6 +1,6 @@
 # detour
 
-The best drives near you. Open it on a phone mounted in the car: it follows your location and lists the twisty, scenic, smooth and quiet roads within reach, with how bumpy each one is along its length, live closures, and one-tap directions in Apple or Google Maps that drive you along the whole road.
+The best drives near you. Open it on a phone mounted in the car: it follows your location and shows the one best drive within reach, how far, how long and how bumpy along its length, with one big Go that drives you along the whole road in Apple or Google Maps. Swipe for the next best; search a road for its pavement or a town for its best drives. On a road it knows, it shows what the pavement is like ahead.
 
 California for now.
 
@@ -13,7 +13,12 @@ AWS terrain tiles ────┤  bun run data   roads.db (every road, every sc
 FHWA HPMS 2018, 2025 ─┼──────────────▶  public/roads/<build>/<square>.json
 city/county pavement ─┤                 (listed roads, 0.5° squares)
 rider reports ────────┘                           │
-phone location ─▶ nearby squares ─▶ rank ─────────┴▶ drive times (OSRM) ─▶ list + map
+                                   bun data/glance.ts (at build)
+                                                  ▼
+                            public/glance/<build>/<square>.json  (best 40 per square, light lines, towns)
+                            public/glance/<build>/search.json    (every road and town, with pavement)
+                                                  │
+phone location ─▶ nearby squares ─▶ rank ─────────┴▶ drive times (OSRM) ─▶ one answer + sketch
 ```
 
 A road is one named road (or route number) cut where it changes character: at long straights, and where it passes between open country and built-up areas. Roads under a mile are dropped.

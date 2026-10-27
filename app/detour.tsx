@@ -144,9 +144,7 @@ const labelOf = (page: Page | null, focused: boolean, spot: Spot | null) => {
 
 const waitingFor = (located: boolean, denied: boolean, ready: boolean) => {
   if (!located) {
-    return denied
-      ? "Location is off. Search a town to see drives near it."
-      : "Finding where you are…";
+    return denied ? "Location is off." : "Finding where you are…";
   }
 
   return ready ? "No drives we know within 90 min." : "Finding the best drive…";

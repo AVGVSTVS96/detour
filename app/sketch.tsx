@@ -19,9 +19,18 @@ interface Label {
   end: boolean;
 }
 
-const overlaps = (a: Label, b: Label) =>
-  Math.abs(a.y - b.y) < 22 &&
-  Math.abs(a.x - b.x) < (Math.max(a.name.length, b.name.length) + 2) * 9.5;
+const span = ({ name, x, end }: Label) => {
+  const width = name.length * 9.5 + 14;
+
+  return end ? [x - width, x + 4] : [x - 4, x + width];
+};
+
+const overlaps = (a: Label, b: Label) => {
+  const [aLeft = 0, aRight = 0] = span(a);
+  const [bLeft = 0, bRight = 0] = span(b);
+
+  return Math.abs(a.y - b.y) < 24 && aLeft < bRight && bLeft < aRight;
+};
 
 const labels = (
   towns: Town[],
@@ -115,6 +124,7 @@ const pathOf = (line: Point[], toXY: (point: Point) => Point) =>
     .join(" ");
 
 const Drawing = ({
+  behind,
   origin,
   place,
   picks,
@@ -122,6 +132,7 @@ const Drawing = ({
   size,
   towns,
 }: {
+  behind: Point[] | null;
   origin: Point;
   place: string | null;
   picks: Ranked[];
@@ -165,21 +176,6 @@ const Drawing = ({
               />,
             ]
       )}
-      {named.map(({ name, x, y, end }) => (
-        <g className="fill-mute" key={name}>
-          <rect height={6} width={6} x={x - 3} y={y - 3} />
-          <text
-            className="stroke-paper text-base font-semibold"
-            paintOrder="stroke"
-            strokeWidth={4}
-            textAnchor={end ? "end" : "start"}
-            x={end ? x - 8 : x + 8}
-            y={y + 5}
-          >
-            {name}
-          </text>
-        </g>
-      ))}
       <line
         className="stroke-ink"
         strokeDasharray="1 9"
@@ -190,6 +186,15 @@ const Drawing = ({
         y1={youY}
         y2={startY}
       />
+      {behind && (
+        <polyline
+          className="fill-none stroke-mute opacity-50"
+          points={pathOf(behind, toXY)}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth={8}
+        />
+      )}
       <polyline
         className="fill-none stroke-ink"
         points={line}
@@ -206,6 +211,21 @@ const Drawing = ({
           strokeLinejoin="round"
           strokeWidth={8}
         />
+      ))}
+      {named.map(({ name, x, y, end }) => (
+        <g className="fill-mute" key={name}>
+          <rect height={6} width={6} x={x - 3} y={y - 3} />
+          <text
+            className="stroke-paper text-base font-semibold"
+            paintOrder="stroke"
+            strokeWidth={4}
+            textAnchor={end ? "end" : "start"}
+            x={end ? x - 8 : x + 8}
+            y={y + 5}
+          >
+            {name}
+          </text>
+        </g>
       ))}
       <rect
         className="fill-paper stroke-ink"
@@ -239,12 +259,14 @@ const Drawing = ({
 };
 
 export const Sketch = ({
+  behind,
   origin,
   place,
   picks,
   shown,
   towns,
 }: {
+  behind: Point[] | null;
   origin: Point | null;
   place: string | null;
   picks: Ranked[];
@@ -258,6 +280,7 @@ export const Sketch = ({
     <div className="size-full" ref={ref}>
       {ready && (
         <Drawing
+          behind={behind}
           origin={origin}
           place={place}
           picks={picks}

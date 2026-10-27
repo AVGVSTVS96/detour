@@ -3,19 +3,21 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { PointerEvent, ReactNode, RefObject } from "react";
 
-import { Answer } from "@/app/answer";
+import { Answer, OnRoadAnswer } from "@/app/answer";
 import { Search } from "@/app/search";
 import { Sketch } from "@/app/sketch";
 import type { Closure } from "@/lib/closure";
 import type { Point } from "@/lib/geo";
-import { title } from "@/lib/glance";
+import { appleTo, googleTo, title } from "@/lib/glance";
 import type { FoundPlace, FoundRoad } from "@/lib/glance";
 import { loadAll, loadBest, loadIndex } from "@/lib/glance-data";
 import { readJson } from "@/lib/json";
-import { appleMaps, googleMaps } from "@/lib/rank";
+import type { OnRoad } from "@/lib/on-road";
+import { appleMaps, closuresOn, googleMaps } from "@/lib/rank";
 import type { Ranked } from "@/lib/rank";
 import type { Road } from "@/lib/road";
 import { useLocation } from "@/lib/use-location";
+import { useOnRoad } from "@/lib/use-on-road";
 import { usePicks } from "@/lib/use-picks";
 import { useWakeLock } from "@/lib/use-wake-lock";
 
@@ -23,6 +25,53 @@ interface Spot {
   name: string;
   at: Point;
 }
+
+type Page =
+  | { kind: "pick"; ranked: Ranked }
+  | { kind: "on"; ranked: Ranked; on: OnRoad };
+
+interface Links {
+  apple: string;
+  google: string;
+}
+
+const linksOf = (page: Page | null): Links | null => {
+  if (page === null) {
+    return null;
+  }
+
+  return page.kind === "on"
+    ? { apple: appleTo(page.on.end), google: googleTo(page.on.end) }
+    : { apple: appleMaps(page.ranked), google: googleMaps(page.ranked) };
+};
+
+const onRoadPage = (
+  on: OnRoad | null,
+  at: Point | null,
+  closures: Closure[]
+): Page[] =>
+  on && at
+    ? [
+        {
+          kind: "on",
+          on,
+          ranked: {
+            closures: closuresOn(on.road, closures),
+            end: on.end,
+            estimated: false,
+            minutes: 0,
+            road: {
+              ...on.road,
+              line: on.line,
+              miles: on.left,
+              paving: on.ahead,
+            },
+            score: 0,
+            start: at,
+          },
+        },
+      ]
+    : [];
 
 const pointFromSearch = (search: string): Point | null => {
   const at = new URLSearchParams(search).get("at")?.split(",").map(Number);
@@ -53,7 +102,39 @@ const findRoad = async ({ name, cell, miles }: FoundRoad) => {
   return match(best.roads) ?? match(await loadAll(build, cell));
 };
 
-const labelOf = (focused: boolean, spot: Spot | null) => {
+const pagesOf = (
+  focused: Ranked | null,
+  driving: Page[],
+  picks: Ranked[]
+): Page[] => {
+  if (focused) {
+    return [{ kind: "pick", ranked: focused }];
+  }
+
+  const skip = new Set(driving.map(({ ranked }) => ranked.road.id));
+
+  return [
+    ...driving,
+    ...picks.flatMap((ranked): Page[] =>
+      skip.has(ranked.road.id) ? [] : [{ kind: "pick", ranked }]
+    ),
+  ];
+};
+
+const sketchFrom = (
+  current: Page | null,
+  live: Point | null,
+  origin: Point | null
+) =>
+  current?.kind === "on"
+    ? { behind: current.on.road.line, from: live }
+    : { behind: null, from: origin };
+
+const labelOf = (page: Page | null, focused: boolean, spot: Spot | null) => {
+  if (page?.kind === "on") {
+    return "You're on";
+  }
+
   if (focused) {
     return `From ${spot ? spot.name : "you"}`;
   }
@@ -71,15 +152,31 @@ const waitingFor = (located: boolean, denied: boolean, ready: boolean) => {
   return ready ? "No drives we know within 90 min." : "Finding the best drive…";
 };
 
-const Waiting = ({ children }: { children: ReactNode }) => (
+const Waiting = ({
+  children,
+  onSearch,
+}: {
+  children: ReactNode;
+  onSearch: (() => void) | null;
+}) => (
   <div className="flex flex-col gap-3">
     <p className="min-h-[2lh] text-[1.875rem] leading-[1.1] font-black tracking-tight">
       {children}
     </p>
-    <p className="min-h-[7.75rem] text-lg text-mute">
-      detour ranks the twisty, scenic, smooth and quiet roads within an hour and
-      a half.
-    </p>
+    {onSearch ? (
+      <button
+        className="h-14 border-[3px] border-ink bg-hi text-lg font-bold text-[#0a0a0a]"
+        onClick={onSearch}
+        type="button"
+      >
+        Search a town
+      </button>
+    ) : (
+      <p className="min-h-[7.75rem] text-lg text-mute">
+        detour ranks the twisty, scenic, smooth and quiet roads within an hour
+        and a half.
+      </p>
+    )}
   </div>
 );
 
@@ -119,21 +216,21 @@ const Pager = ({
   </div>
 );
 
-const Go = ({ ranked, apple }: { ranked: Ranked | null; apple: boolean }) => {
+const Go = ({ links, apple }: { links: Links | null; apple: boolean }) => {
   const first = apple
-    ? { href: ranked && appleMaps(ranked), name: "Apple Maps" }
-    : { href: ranked && googleMaps(ranked), name: "Google Maps" };
+    ? { href: links?.apple, name: "Apple Maps" }
+    : { href: links?.google, name: "Google Maps" };
 
   const second = apple
-    ? { href: ranked && googleMaps(ranked), name: "Google Maps" }
-    : { href: ranked && appleMaps(ranked), name: "Apple Maps" };
+    ? { href: links?.google, name: "Google Maps" }
+    : { href: links?.apple, name: "Apple Maps" };
 
-  const live = ranked !== null;
+  const live = links !== null;
 
   return (
     <nav
       aria-label="Directions"
-      className={`grid shrink-0 grid-cols-[1fr_7.5rem] gap-3 px-4 pt-1 pb-[max(16px,env(safe-area-inset-bottom))] ${live ? "" : "pointer-events-none opacity-40"}`}
+      className={`grid shrink-0 grid-cols-[1fr_7.5rem] gap-3 px-4 pt-1 pb-[max(16px,env(safe-area-inset-bottom))] dash:col-start-2 dash:row-start-3 dash:border-l-[3px] dash:border-ink dash:pr-[max(16px,env(safe-area-inset-right))] ${live ? "" : "pointer-events-none opacity-40"}`}
     >
       <a
         className="flex h-16 items-center justify-between border-[3px] border-ink bg-hi px-4 text-[#0a0a0a] shadow-[4px_4px_0_var(--color-ink)] active:translate-1 active:shadow-none"
@@ -171,7 +268,7 @@ const SearchBar = ({
   onClear: () => void;
   onQuery: (query: string) => void;
 }) => (
-  <header className="flex shrink-0 gap-2 p-3 pt-[max(12px,env(safe-area-inset-top))]">
+  <header className="flex shrink-0 gap-2 p-3 pt-[max(12px,env(safe-area-inset-top))] dash:col-start-1 dash:row-start-1 dash:pl-[max(12px,env(safe-area-inset-left))]">
     <h1 className="flex h-14 items-center bg-ink px-3 text-xl font-black tracking-tight text-paper">
       detour
     </h1>
@@ -207,6 +304,36 @@ const SearchBar = ({
       )}
     </div>
   </header>
+);
+
+const Shown = ({
+  current,
+  origin,
+  detail,
+  denied,
+  ready,
+  onSearch,
+}: {
+  current: Page | null;
+  origin: Point | null;
+  detail: boolean;
+  denied: boolean;
+  ready: boolean;
+  onSearch: () => void;
+}) => (
+  <>
+    {current?.kind === "on" && (
+      <OnRoadAnswer closures={current.ranked.closures} on={current.on} />
+    )}
+    {current?.kind === "pick" && origin && (
+      <Answer detail={detail} from={origin} ranked={current.ranked} />
+    )}
+    {current === null && (
+      <Waiting onSearch={denied && origin === null ? onSearch : null}>
+        {waitingFor(origin !== null, denied, ready)}
+      </Waiting>
+    )}
+  </>
 );
 
 export const Detour = () => {
@@ -246,18 +373,28 @@ export const Detour = () => {
   const live = location.status === "live" ? location.point : null;
   const origin = spot?.at ?? pointFromSearch(search) ?? live;
   const { picks, focused, ready, towns } = usePicks(origin, closures, focus);
+  const on = useOnRoad(location);
+  const driving = spot === null && focus === null ? on : null;
+
+  const pages = pagesOf(
+    focused,
+    onRoadPage(driving, live, closures),
+    ready ? picks : []
+  );
 
   const index = Math.max(
     0,
-    picks.findIndex(({ road }) => road.id === shownId)
+    pages.findIndex(({ ranked }) => ranked.road.id === shownId)
   );
 
-  const shown = focused ?? (ready ? (picks[index] ?? null) : null);
+  const current = pages[index] ?? null;
+  const shown = current?.ranked ?? null;
+  const view = sketchFrom(current, live, origin);
 
   const page = (step: number) => {
-    const next = picks[(index + step + picks.length) % picks.length];
+    const next = pages[(index + step + pages.length) % pages.length];
 
-    setShownId(next?.road.id ?? null);
+    setShownId(next?.ranked.road.id ?? null);
   };
 
   const close = () => {
@@ -294,7 +431,7 @@ export const Detour = () => {
 
     swipe.current = null;
 
-    if (!focused && Math.abs(moved) > 60 && picks.length > 1) {
+    if (Math.abs(moved) > 60 && pages.length > 1) {
       page(moved < 0 ? 1 : -1);
     }
   };
@@ -302,7 +439,7 @@ export const Detour = () => {
   const context = focus ? title(focus) : (spot?.name ?? null);
 
   return (
-    <main className="mx-auto flex h-dvh max-w-[30rem] flex-col">
+    <main className="mx-auto flex h-dvh max-w-[30rem] flex-col dash:grid dash:max-w-none dash:grid-cols-[1fr_25rem] dash:grid-rows-[auto_1fr_auto]">
       <SearchBar
         context={context}
         input={input}
@@ -319,7 +456,7 @@ export const Detour = () => {
       {searching ? (
         <section
           aria-label="Search results"
-          className="min-h-0 flex-1 overflow-y-auto border-t-[3px] border-ink"
+          className="min-h-0 flex-1 overflow-y-auto border-t-[3px] border-ink dash:col-span-2 dash:row-span-2 dash:row-start-2"
         >
           <Search
             onPlace={pickPlace}
@@ -332,9 +469,10 @@ export const Detour = () => {
         </section>
       ) : (
         <>
-          <div className="min-h-0 flex-1 border-y-[3px] border-ink">
+          <div className="min-h-0 flex-1 border-y-[3px] border-ink dash:col-start-1 dash:row-span-2 dash:row-start-2 dash:border-b-0">
             <Sketch
-              origin={origin}
+              origin={view.from}
+              behind={view.behind}
               picks={picks}
               place={spot?.name ?? null}
               shown={shown}
@@ -343,31 +481,30 @@ export const Detour = () => {
           </div>
           <section
             aria-label="Best drive"
-            className="shrink-0 touch-pan-y px-4 pt-3 pb-4"
+            className="shrink-0 touch-pan-y px-4 pt-3 pb-4 dash:col-start-2 dash:row-span-2 dash:row-start-1 dash:self-stretch dash:border-l-[3px] dash:border-ink dash:pr-[max(16px,env(safe-area-inset-right))]"
             onPointerDown={startSwipe}
             onPointerUp={endSwipe}
           >
             <div className="mb-2 flex h-12 items-center justify-between gap-2">
               <p className="truncate text-base font-bold tracking-wide uppercase">
-                {labelOf(focused !== null, spot)}
+                {labelOf(current, focused !== null, spot)}
               </p>
-              {!focused && shown && picks.length > 1 && (
-                <Pager count={picks.length} index={index} onPage={page} />
+              {pages.length > 1 && (
+                <Pager count={pages.length} index={index} onPage={page} />
               )}
             </div>
-            {shown && origin ? (
-              <Answer detail={focused !== null} from={origin} ranked={shown} />
-            ) : (
-              <Waiting>
-                {waitingFor(
-                  origin !== null,
-                  location.status === "denied",
-                  ready
-                )}
-              </Waiting>
-            )}
+            <Shown
+              current={current}
+              denied={location.status === "denied"}
+              detail={focused !== null}
+              onSearch={() => {
+                input.current?.focus();
+              }}
+              origin={origin}
+              ready={ready}
+            />
           </section>
-          <Go apple={apple} ranked={shown} />
+          <Go apple={apple} links={linksOf(current)} />
         </>
       )}
     </main>

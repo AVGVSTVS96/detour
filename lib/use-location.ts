@@ -7,7 +7,12 @@ import type { Point } from "@/lib/geo";
 export type LocationState =
   | { status: "waiting" }
   | { status: "denied"; message: string }
-  | { status: "live"; point: Point; heading: number | null };
+  | {
+      status: "live";
+      point: Point;
+      heading: number | null;
+      speed: number | null;
+    };
 
 export const useLocation = (enabled: boolean) => {
   const [state, setState] = useState<LocationState>({ status: "waiting" });
@@ -19,6 +24,7 @@ export const useLocation = (enabled: boolean) => {
             setState({
               heading: coords.heading,
               point: [coords.longitude, coords.latitude],
+              speed: coords.speed,
               status: "live",
             });
           },

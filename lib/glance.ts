@@ -90,9 +90,9 @@ export const title = (road: { name: string; ref: string }) =>
 
 export const quality = (road: Road) => {
   const blend =
-    0.35 * road.twisty +
-    0.3 * road.scenic +
-    0.2 * (road.smooth ?? 45) +
+    0.32 * road.twisty +
+    0.28 * road.scenic +
+    0.25 * (road.smooth ?? 45) +
     0.15 * road.quiet;
 
   const length = 0.5 + 0.5 * Math.min(1, road.miles / 10);
@@ -166,3 +166,11 @@ export const words = (text: string) =>
     .normalize("NFD")
     .replaceAll(/[^a-z0-9]+/gu, " ")
     .trim()}`;
+
+const latLon = ([lon, lat]: Point) => `${lat},${lon}`;
+
+export const appleTo = (end: Point) =>
+  `https://maps.apple.com/directions?${new URLSearchParams({ destination: latLon(end), mode: "driving" })}`;
+
+export const googleTo = (end: Point) =>
+  `https://www.google.com/maps/dir/?${new URLSearchParams({ api: "1", destination: latLon(end), travelmode: "driving" })}`;

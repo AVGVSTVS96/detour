@@ -1,5 +1,7 @@
 @import "tailwindcss";
 
+@custom-variant dash (@media (orientation: landscape) and (max-height: 540px));
+
 @theme {
   --color-paper: #ffffff;
   --color-ink: #0a0a0a;

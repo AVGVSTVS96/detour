@@ -13,7 +13,7 @@ import {
 } from "@/lib/verdict";
 import type { Tone } from "@/lib/verdict";
 
-export const title = (road: Road) => road.name || road.ref;
+const title = (road: Road) => road.name || road.ref;
 
 const GRADE_FILL = ["bg-unknown", "bg-smooth", "bg-fair", "bg-rough"];
 

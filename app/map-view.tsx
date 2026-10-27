@@ -27,7 +27,7 @@ const CALIFORNIA: [Point, Point] = [
   [-114.1, 42],
 ];
 
-export const PAINT = {
+const PAINT = {
   dark: {
     fair: "#ffb020",
     hi: "#ffe94d",

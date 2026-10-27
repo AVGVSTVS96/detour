@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import type { Point } from "@/lib/geo";
 import { useLocation } from "@/lib/use-location";
 
-export interface Pin {
+interface Pin {
   name: string;
   point: Point;
 }

@@ -18,7 +18,7 @@ const BADGES = 10;
 
 const MOST_CELLS = 12;
 
-export interface Seen {
+interface Seen {
   bounds: [Point, Point];
   zoom: number;
 }

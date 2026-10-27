@@ -81,18 +81,6 @@ const Legend = () => (
   </ul>
 );
 
-const SunIcon = () => (
-  <svg aria-hidden className="size-6" fill="none" viewBox="0 0 24 24">
-    <circle cx="12" cy="12" r="4.5" stroke="currentColor" strokeWidth="2.5" />
-    <path
-      d="M12 1.5v3M12 19.5v3M1.5 12h3M19.5 12h3M4.6 4.6l2.1 2.1M17.3 17.3l2.1 2.1M4.6 19.4l2.1-2.1M17.3 6.7l2.1-2.1"
-      stroke="currentColor"
-      strokeLinecap="square"
-      strokeWidth="2.5"
-    />
-  </svg>
-);
-
 const Reach = ({
   reach,
   onReach,
@@ -416,19 +404,18 @@ export const Detour = () => {
           <Legend />
         </header>
         <button
-          aria-label="Keep screen on"
           aria-pressed={screenOn}
-          className={`absolute right-3 bottom-3 flex size-11 items-center justify-center border-2 border-ink ${screenOn ? "bg-hi text-[#0a0a0a]" : "bg-paper"}`}
+          className={`absolute right-3 bottom-3 h-11 border-2 border-ink px-3 font-bold ${screenOn ? "bg-hi text-[#0a0a0a]" : "bg-paper"}`}
           onClick={() => {
             setScreenOn(!screenOn);
           }}
           type="button"
         >
-          <SunIcon />
+          {screenOn ? "Screen stays on" : "Keep screen on"}
         </button>
         {away && view !== null && story === null && (
           <button
-            className="absolute bottom-3 left-1/2 h-11 -translate-x-1/2 border-2 border-ink bg-hi px-4 font-bold text-[#0a0a0a]"
+            className="absolute bottom-3 left-3 h-11 border-2 border-ink bg-hi px-3 font-bold text-[#0a0a0a]"
             onClick={() => {
               origin.pick({ name: "the map", point: view.center });
               setView({ ...view, user: false });

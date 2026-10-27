@@ -132,12 +132,12 @@ export const Card = ({
             {closureText(ranked)} ·
           </span>
         )}
-        <span>{twistyVerdict(road).word} ·</span>
-        <span>{scenicVerdict(road).word} ·</span>
         <span className="inline-flex items-center gap-1.5 font-bold">
           <Swatch tone={pavement.tone} />
-          {pavement.word}
+          {pavement.word} ·
         </span>
+        <span>{twistyVerdict(road).word} ·</span>
+        <span>{scenicVerdict(road).word}</span>
       </p>
       <div className="mt-auto">
         <Directions ranked={ranked} />
@@ -268,6 +268,14 @@ const untilText = (until: number | null) =>
 
 const TOPIC_ORDER = ["closure", "pavement", "safety", "twistiness", "scenery"];
 
+const TOPIC_WORD = new Map([
+  ["closure", "closure"],
+  ["pavement", "pavement"],
+  ["safety", "safety"],
+  ["scenery", "views"],
+  ["twistiness", "curves"],
+]);
+
 const byTopic = (a: Report, b: Report) =>
   TOPIC_ORDER.indexOf(a.topic) - TOPIC_ORDER.indexOf(b.topic) ||
   (b.year ?? 0) - (a.year ?? 0);
@@ -295,7 +303,7 @@ const Reports = ({ road }: { road: Road }) =>
               >
                 <span>“{report.text}”</span>
                 <span className="text-mute underline underline-offset-2">
-                  {[report.topic, report.site, report.year]
+                  {[report.year, report.site, TOPIC_WORD.get(report.topic)]
                     .filter(Boolean)
                     .join(" · ")}
                 </span>

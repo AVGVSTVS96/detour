@@ -1,33 +1,33 @@
+import { GRADE_FILL } from "@/app/paint";
 import type { Point } from "@/lib/geo";
 import {
   clock,
   driveMinutes,
-  GRADE_WORDS,
-  gradeOf,
   heading,
+  pavementOf,
+  pavementText,
+  roughMiles,
   title,
   traits,
 } from "@/lib/glance";
-import type { Grade } from "@/lib/glance";
 import type { Ranked } from "@/lib/rank";
-import type { Road } from "@/lib/road";
+import { pavingFrom } from "@/lib/verdict";
 
-const FILL: Record<Grade, string> = {
-  fair: "bg-fair",
-  rough: "bg-rough",
-  smooth: "bg-smooth",
-  unknown: "bg-unknown",
+const tenths = (miles: number) => Math.round(miles * 10) / 10;
+
+const nameSize = (name: string) => {
+  if (name.length <= 20) {
+    return "text-[1.875rem]";
+  }
+
+  return name.length <= 26 ? "text-[1.5rem]" : "text-[1.375rem]";
 };
 
-const pieces = (road: Road): [number, Grade][] => [
-  [road.miles, gradeOf(road.smooth)],
-];
-
-export const Strip = ({ road }: { road: Road }) => (
-  <div className="flex h-5 border-[3px] border-ink" aria-hidden="true">
-    {pieces(road).map(([miles, grade], index) => (
+export const Strip = ({ ranked }: { ranked: Ranked }) => (
+  <div aria-hidden="true" className="flex h-6 border-[3px] border-ink">
+    {pavingFrom(ranked.road, ranked.start).map(([miles, grade], index) => (
       <div
-        className={`${FILL[grade]} h-full border-ink not-first:border-l-2`}
+        className={`${GRADE_FILL[grade] ?? ""} h-full`}
         key={`${index}${grade}`}
         style={{ flexGrow: miles }}
       />
@@ -35,13 +35,15 @@ export const Strip = ({ road }: { road: Road }) => (
   </div>
 );
 
-export const smoothText = (smooth: number | null) => {
-  const grade = gradeOf(smooth);
+const sourceText = (ranked: Ranked) =>
+  ranked.road.pavedBy
+    .map(({ name, from, to }) => {
+      const years =
+        from === to || to === null ? `${from ?? ""}` : `${from ?? ""}–${to}`;
 
-  return smooth === null
-    ? GRADE_WORDS[grade]
-    : `${GRADE_WORDS[grade]} ${smooth}/100`;
-};
+      return `${name} ${years}`.trim();
+    })
+    .join(", ");
 
 const untilText = (until: number | null) =>
   until === null
@@ -59,21 +61,32 @@ const Stat = ({ value, label }: { value: string; label: string }) => (
   </div>
 );
 
-export const Answer = ({ ranked, from }: { ranked: Ranked; from: Point }) => {
+export const Answer = ({
+  ranked,
+  from,
+  detail,
+}: {
+  ranked: Ranked;
+  from: Point;
+  detail: boolean;
+}) => {
   const { road, minutes, estimated, closures } = ranked;
   const away = minutes < 2 ? "Here" : clock(minutes);
+  const rough = tenths(roughMiles(road));
 
-  const where = [road.town && `near ${road.town}`, road.name && road.ref]
+  const about = [...traits(road), road.town && `near ${road.town}`]
     .filter(Boolean)
     .join(" · ");
 
   return (
     <div className="flex flex-col gap-3">
       <div>
-        <h2 className="line-clamp-2 text-[1.875rem] leading-[1.1] font-black tracking-tight">
+        <h2
+          className={`line-clamp-2 leading-[1.1] font-black tracking-tight ${nameSize(title(road))}`}
+        >
           {title(road)}
         </h2>
-        <p className="mt-1 truncate text-lg text-mute">{where || " "}</p>
+        <p className="mt-1 truncate text-lg text-mute">{about || "\u00A0"}</p>
       </div>
       {closures.slice(0, 1).map((closure) => (
         <p
@@ -95,13 +108,29 @@ export const Answer = ({ ranked, from }: { ranked: Ranked; from: Point }) => {
         />
       </div>
       <div className="flex flex-col gap-1.5">
-        <Strip road={road} />
-        <p className="text-lg font-bold">
-          {smoothText(road.smooth)}
-          <span className="font-semibold text-mute">
-            {traits(road).map((trait) => ` · ${trait}`)}
-          </span>
+        <Strip ranked={ranked} />
+        <p className="truncate text-lg font-bold">
+          {pavementText(pavementOf(road))}
+          {rough > 0 && (
+            <span className="font-semibold text-mute"> · {rough} mi rough</span>
+          )}
         </p>
+        {detail && road.pavedBy.length > 0 && (
+          <p className="text-base text-mute">From {sourceText(ranked)}</p>
+        )}
+        {detail &&
+          road.reports.slice(0, 1).map((quote) => (
+            <p className="line-clamp-3 text-base" key={quote.url}>
+              “{quote.text}”{" "}
+              <a
+                className="inline-flex min-h-11 items-center font-semibold text-mute underline underline-offset-2"
+                href={quote.url}
+              >
+                {quote.site}
+                {quote.year === null ? "" : `, ${quote.year}`}
+              </a>
+            </p>
+          ))}
       </div>
     </div>
   );

@@ -2,19 +2,12 @@
 
 import { useEffect, useMemo, useState } from "react";
 
-import { smoothText } from "@/app/answer";
+import { TONE_FILL, TONE_WORD } from "@/app/paint";
 import { distance } from "@/lib/geo";
 import type { Point } from "@/lib/geo";
-import { clock, gradeOf, guessMinutes, words } from "@/lib/glance";
-import type { Found, FoundPlace, FoundRoad, Grade } from "@/lib/glance";
+import { clock, guessMinutes, pavementText, words } from "@/lib/glance";
+import type { Found, FoundPlace, FoundRoad, Pavement } from "@/lib/glance";
 import { loadSearch } from "@/lib/glance-data";
-
-const SWATCH: Record<Grade, string> = {
-  fair: "bg-fair",
-  rough: "bg-rough",
-  smooth: "bg-smooth",
-  unknown: "bg-unknown",
-};
 
 type Hit =
   | { kind: "road"; found: FoundRoad; tier: number; meters: number }
@@ -85,8 +78,9 @@ const find = (index: Found, typed: string, origin: Point | null) => {
         Number(a.kind === "road") - Number(b.kind === "road") ||
         a.meters - b.meters
     )
-    .filter(({ kind, found }) => {
-      const name = `${kind}${found.name}`.toLowerCase();
+    .filter((hit) => {
+      const miles = hit.kind === "road" ? hit.found.miles : 0;
+      const name = `${hit.kind}${hit.found.name}${miles}`.toLowerCase();
       const fresh = !named.has(name);
       named.add(name);
 
@@ -95,11 +89,21 @@ const find = (index: Found, typed: string, origin: Point | null) => {
     .slice(0, 7);
 };
 
-const Swatch = ({ smooth }: { smooth: number | null }) => (
-  <span
-    aria-hidden="true"
-    className={`inline-block size-4 shrink-0 border-2 border-ink ${SWATCH[gradeOf(smooth)]}`}
-  />
+const PavementLine = ({
+  pavement,
+  rest,
+}: {
+  pavement: Pavement;
+  rest: string;
+}) => (
+  <span className="flex items-center gap-2 text-base font-semibold">
+    <span
+      aria-hidden="true"
+      className={`inline-block size-4 shrink-0 border-2 border-ink ${TONE_FILL[pavement.tone]}`}
+    />
+    <span className="shrink-0">{pavementText(pavement)}</span>
+    <span className="truncate font-normal text-mute">{rest}</span>
+  </span>
 );
 
 const RoadHit = ({
@@ -111,7 +115,7 @@ const RoadHit = ({
   origin: Point | null;
   onPick: (found: FoundRoad) => void;
 }) => {
-  const { name, ref, town, smooth, at } = found;
+  const { name, ref, town, miles, pavement, at } = found;
 
   return (
     <button
@@ -129,13 +133,12 @@ const RoadHit = ({
           </span>
         )}
       </span>
-      <span className="flex items-center gap-2 text-base font-semibold">
-        <Swatch smooth={smooth} />
-        {smoothText(smooth)}
-        <span className="truncate font-normal text-mute">
-          {[ref, town && `near ${town}`].filter(Boolean).join(" · ")}
-        </span>
-      </span>
+      <PavementLine
+        pavement={pavement}
+        rest={[`${miles} mi`, ref, town && `near ${town}`]
+          .filter(Boolean)
+          .join(" · ")}
+      />
     </button>
   );
 };
@@ -146,33 +149,35 @@ const PlaceHit = ({
 }: {
   found: FoundPlace;
   onPick: (found: FoundPlace) => void;
-}) => {
-  const {
-    name,
-    best: { minutes, drive, smooth },
-  } = found;
-
-  return (
-    <button
-      className="flex w-full flex-col gap-1 px-4 py-3 text-left active:bg-hi/50"
-      onClick={() => {
-        onPick(found);
-      }}
-      type="button"
-    >
-      <span className="truncate text-xl font-bold">{name}</span>
-      <span className="text-base">
-        Best drive: <span className="font-semibold">{found.best.name}</span>,{" "}
-        {minutes < 2 ? "right there" : `${clock(minutes)} out`}, {clock(drive)}{" "}
-        of road
+}) => (
+  <button
+    className="flex w-full flex-col gap-1 px-4 py-3 text-left active:bg-hi/50"
+    onClick={() => {
+      onPick(found);
+    }}
+    type="button"
+  >
+    <span className="flex w-full items-baseline justify-between gap-3">
+      <span className="truncate text-xl font-bold">{found.name}</span>
+      <span className="shrink-0 text-base font-semibold text-mute">
+        Best drives
       </span>
-      <span className="flex items-center gap-2 text-base font-semibold">
-        <Swatch smooth={smooth} />
-        {smoothText(smooth)}
+    </span>
+    {found.bests.map(({ name, minutes, pavement }) => (
+      <span className="flex items-center gap-2 text-base" key={name}>
+        <span
+          aria-hidden="true"
+          className={`inline-block size-4 shrink-0 border-2 border-ink ${TONE_FILL[pavement.tone]}`}
+        />
+        <span className="min-w-0 flex-1 truncate font-semibold">{name}</span>
+        <span className="shrink-0 text-mute">
+          {TONE_WORD[pavement.tone]} ·{" "}
+          {minutes < 2 ? "in town" : `${clock(minutes)} out`}
+        </span>
       </span>
-    </button>
-  );
-};
+    ))}
+  </button>
+);
 
 export const Search = ({
   query,

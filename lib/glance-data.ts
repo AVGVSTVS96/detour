@@ -1,8 +1,9 @@
-import type { Found, SearchFile } from "@/lib/glance";
+import type { Cell, Found, SearchFile } from "@/lib/glance";
 import { readJson } from "@/lib/json";
 import type { Road, RoadIndex } from "@/lib/road";
 
-const cells = new Map<string, Promise<Road[]>>();
+const cells = new Map<string, Promise<Cell>>();
+const fullCells = new Map<string, Promise<Road[]>>();
 let index: Promise<RoadIndex> | undefined;
 let search: Promise<Found> | undefined;
 
@@ -12,9 +13,13 @@ const fetchJson = async <T>(path: string, fallback: T) => {
   return response?.ok === true ? await readJson<T>(response) : fallback;
 };
 
-const cellAt = async (path: string) => {
-  const request = cells.get(path) ?? fetchJson<Road[]>(path, []);
-  cells.set(path, request);
+const once = async <T>(
+  held: Map<string, Promise<T>>,
+  path: string,
+  fallback: T
+) => {
+  const request = held.get(path) ?? fetchJson<T>(path, fallback);
+  held.set(path, request);
 
   return await request;
 };
@@ -28,10 +33,10 @@ export const loadIndex = async () => {
 };
 
 export const loadBest = async (build: string, key: string) =>
-  await cellAt(`/glance/${build}/${key}.json`);
+  await once(cells, `/glance/${build}/${key}.json`, { roads: [], towns: [] });
 
 export const loadAll = async (build: string, key: string) =>
-  await cellAt(`/roads/${build}/${key}.json`);
+  await once(fullCells, `/roads/${build}/${key}.json`, []);
 
 const readSearch = async (): Promise<Found> => {
   const { build } = await loadIndex();
@@ -42,23 +47,28 @@ const readSearch = async (): Promise<Found> => {
   );
 
   return {
-    places: places.map(([name, lon, lat, best]) => {
-      const [road, , minutes, drive, smooth] = best;
-
-      return {
-        at: [lon, lat],
-        best: { drive, minutes, name: road, smooth },
-        name,
-      };
-    }),
-    roads: roads.map(([name, ref, town, cell, smooth, lon, lat]) => ({
+    places: places.map(([name, lon, lat, bests]) => ({
       at: [lon, lat],
-      cell,
+      bests: bests.map(([road, cell, minutes, drive, smooth, word, tone]) => ({
+        cell,
+        drive,
+        minutes,
+        name: road,
+        pavement: { smooth, tone, word },
+      })),
       name,
-      ref,
-      smooth,
-      town,
     })),
+    roads: roads.map(
+      ([name, ref, town, cell, miles, smooth, word, tone, lon, lat]) => ({
+        at: [lon, lat],
+        cell,
+        miles,
+        name,
+        pavement: { smooth, tone, word },
+        ref,
+        town,
+      })
+    ),
   };
 };
 

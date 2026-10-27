@@ -13,6 +13,7 @@ import {
   title,
   worth,
 } from "@/lib/glance";
+import type { Town } from "@/lib/glance";
 import { loadBest, loadIndex } from "@/lib/glance-data";
 import { closuresOn } from "@/lib/rank";
 import type { Ranked } from "@/lib/rank";
@@ -37,17 +38,20 @@ const nearby = async (origin: Point) => {
   const available = new Set(cells);
   const byId = new Map<string, Road>();
 
-  const lists = await Promise.all(
+  const loaded = await Promise.all(
     cellsAround(origin, REACH)
       .filter((key) => available.has(key))
       .map(async (key) => await loadBest(build, key))
   );
 
-  for (const road of lists.flat()) {
+  for (const road of loaded.flatMap(({ roads }) => roads)) {
     byId.set(road.id, road);
   }
 
-  return [...byId.values()];
+  return {
+    roads: [...byId.values()],
+    towns: loaded.flatMap(({ towns }) => towns),
+  };
 };
 
 const toRanked = (
@@ -80,7 +84,13 @@ export const usePicks = (
 ) => {
   const key = keyOf(origin);
   const here = useMemo(() => pointOf(key), [key]);
-  const [loaded, setLoaded] = useState({ key: "", roads: new Array<Road>() });
+
+  const [loaded, setLoaded] = useState({
+    key: "",
+    roads: new Array<Road>(),
+    towns: new Array<Town>(),
+  });
+
   const [waited, setWaited] = useState<string | null>(null);
 
   useEffect(() => {
@@ -88,10 +98,10 @@ export const usePicks = (
 
     const load = async () => {
       if (here !== null && key !== null) {
-        const roads = await nearby(here);
+        const { roads, towns } = await nearby(here);
 
         if (!cancelled) {
-          setLoaded({ key, roads });
+          setLoaded({ key, roads, towns });
         }
       }
     };
@@ -174,5 +184,6 @@ export const usePicks = (
       here !== null &&
       loaded.key === key &&
       (timed || waited === key || candidates.length === 0),
+    towns: loaded.towns,
   };
 };

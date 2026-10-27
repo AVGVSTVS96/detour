@@ -42,13 +42,15 @@ const onPopState = (notify: () => void) => {
   };
 };
 
-const findRoad = async ({ name, cell }: FoundRoad) => {
+const findRoad = async ({ name, cell, miles }: FoundRoad) => {
   const { build } = await loadIndex();
-  const match = (roads: Road[]) => roads.find((road) => title(road) === name);
 
-  return (
-    match(await loadBest(build, cell)) ?? match(await loadAll(build, cell))
-  );
+  const match = (roads: Road[]) =>
+    roads.find((road) => title(road) === name && road.miles === miles);
+
+  const best = await loadBest(build, cell);
+
+  return match(best.roads) ?? match(await loadAll(build, cell));
 };
 
 const labelOf = (focused: boolean, spot: Spot | null) => {
@@ -243,7 +245,7 @@ export const Detour = () => {
 
   const live = location.status === "live" ? location.point : null;
   const origin = spot?.at ?? pointFromSearch(search) ?? live;
-  const { picks, focused, ready } = usePicks(origin, closures, focus);
+  const { picks, focused, ready, towns } = usePicks(origin, closures, focus);
 
   const index = Math.max(
     0,
@@ -331,7 +333,13 @@ export const Detour = () => {
       ) : (
         <>
           <div className="min-h-0 flex-1 border-y-[3px] border-ink">
-            <Sketch origin={origin} picks={picks} shown={shown} />
+            <Sketch
+              origin={origin}
+              picks={picks}
+              place={spot?.name ?? null}
+              shown={shown}
+              towns={towns}
+            />
           </div>
           <section
             aria-label="Best drive"
@@ -348,7 +356,7 @@ export const Detour = () => {
               )}
             </div>
             {shown && origin ? (
-              <Answer from={origin} ranked={shown} />
+              <Answer detail={focused !== null} from={origin} ranked={shown} />
             ) : (
               <Waiting>
                 {waitingFor(

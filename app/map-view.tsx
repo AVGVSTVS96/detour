@@ -4,7 +4,9 @@ import * as maplibregl from "maplibre-gl";
 import type {
   ExpressionSpecification,
   GeoJSONSource,
+  LayerSpecification,
   Map as MapLibre,
+  StyleSpecification,
 } from "maplibre-gl";
 import { useEffect, useRef } from "react";
 import type { RefObject } from "react";
@@ -49,7 +51,12 @@ export const PAINT = {
 export interface Drawn {
   road: Road;
   value: number;
-  rank: number | null;
+}
+
+export interface Badge {
+  id: string;
+  point: Point;
+  rank: number;
 }
 
 export interface Camera {
@@ -66,9 +73,11 @@ export interface View {
 
 interface Props {
   drawn: Drawn[];
+  badges: Badge[];
   focusId: string | null;
   story: boolean;
   origin: Point | null;
+  nearEnd: Point | null;
   camera: Camera | null;
   onSelect: (id: string) => void;
   onView: (view: View) => void;
@@ -102,25 +111,21 @@ const roadsData = (drawn: Drawn[]): GeoJSON.FeatureCollection => ({
   type: "FeatureCollection",
 });
 
-const middle = (road: Road) =>
-  road.line[Math.floor(road.line.length / 2)] ?? road.line[0];
-
-const ranksData = (
-  drawn: Drawn[],
+const badgesData = (
+  badges: Badge[],
   focusId: string | null,
   story: boolean
 ): GeoJSON.FeatureCollection => ({
-  features: drawn.flatMap(({ road, rank }) =>
-    rank === null || (story && road.id !== focusId)
+  features: badges.flatMap(({ id, point, rank }) =>
+    story && id !== focusId
       ? []
       : [
           {
-            geometry: { coordinates: middle(road), type: "Point" as const },
+            geometry: { coordinates: point, type: "Point" as const },
             properties: {
-              focus: road.id === focusId,
-              id: road.id,
-              label: String(rank),
-              rank,
+              icon: `${id === focusId ? "focus" : "badge"}-${rank}`,
+              id,
+              order: id === focusId ? 0 : rank,
             },
             type: "Feature" as const,
           },
@@ -159,43 +164,111 @@ const scheme = () =>
 
 const BADGE = 32;
 
-const badge = (fill: string, ring: string) => {
-  const scale = 2;
+const SCALE = 2;
+
+const drawBadge = (label: string, fill: string, ink: string) => {
   const canvas = document.createElement("canvas");
-  canvas.width = BADGE * scale;
-  canvas.height = BADGE * scale;
+  canvas.width = BADGE * SCALE;
+  canvas.height = BADGE * SCALE;
 
   const context = canvas.getContext("2d");
 
-  if (context) {
-    context.scale(scale, scale);
-    context.beginPath();
-    context.arc(BADGE / 2, BADGE / 2, BADGE / 2 - 2, 0, Math.PI * 2);
-    context.fillStyle = fill;
-    context.fill();
-    context.lineWidth = 2.5;
-    context.strokeStyle = ring;
-    context.stroke();
+  if (!context) {
+    return null;
   }
 
-  return context?.getImageData(0, 0, canvas.width, canvas.height) ?? null;
+  context.scale(SCALE, SCALE);
+  context.beginPath();
+  context.arc(BADGE / 2, BADGE / 2, BADGE / 2 - 2, 0, Math.PI * 2);
+  context.fillStyle = fill;
+  context.fill();
+  context.lineWidth = 2.5;
+  context.strokeStyle = ink === "#ffffff" ? "#ffffff" : "#0a0a0a";
+  context.stroke();
+  context.fillStyle = ink;
+  context.font = "800 16px -apple-system, system-ui, sans-serif";
+  context.textAlign = "center";
+  context.textBaseline = "middle";
+  context.fillText(label, BADGE / 2, BADGE / 2 + 1);
+
+  return context.getImageData(0, 0, canvas.width, canvas.height);
 };
 
-const addBadges = (map: MapLibre) => {
-  for (const [name, fill, ring] of [
-    ["badge", "#0a0a0a", "#ffffff"],
-    ["badge-focus", "#ffe94d", "#0a0a0a"],
-  ] as const) {
-    const image = badge(fill, ring);
+const drawNearEnd = () => {
+  const size = 18;
+  const canvas = document.createElement("canvas");
+  canvas.width = size * SCALE;
+  canvas.height = size * SCALE;
 
+  const context = canvas.getContext("2d");
+
+  if (!context) {
+    return null;
+  }
+
+  context.scale(SCALE, SCALE);
+  context.fillStyle = "#ffffff";
+  context.fillRect(0, 0, size, size);
+  context.fillStyle = "#0a0a0a";
+  context.fillRect(3, 3, size - 6, size - 6);
+
+  return context.getImageData(0, 0, canvas.width, canvas.height);
+};
+
+const addImages = (map: MapLibre) => {
+  const images: [string, ImageData | null][] = [["near-end", drawNearEnd()]];
+
+  for (let rank = 1; rank <= 10; rank += 1) {
+    images.push(
+      [`badge-${rank}`, drawBadge(String(rank), "#0a0a0a", "#ffffff")],
+      [`focus-${rank}`, drawBadge(String(rank), "#ffe94d", "#0a0a0a")]
+    );
+  }
+
+  for (const [name, image] of images) {
     if (image && !map.hasImage(name)) {
-      map.addImage(name, image, { pixelRatio: 2 });
+      map.addImage(name, image, { pixelRatio: SCALE });
     }
   }
 };
 
+const PLACE_LABEL = /^(?:label|place)_/u;
+
+const FONT = ["Noto Sans Regular"];
+
+const plain = (layer: LayerSpecification): LayerSpecification[] => {
+  if (layer.type !== "symbol") {
+    return [layer];
+  }
+
+  const { "icon-image": icon, ...layout } = layer.layout ?? {};
+
+  if (icon !== undefined && !PLACE_LABEL.test(layer.id)) {
+    return [];
+  }
+
+  return [
+    {
+      ...layer,
+      layout:
+        layout["text-field"] === undefined
+          ? layout
+          : { ...layout, "text-font": FONT },
+    },
+  ];
+};
+
+const lighten = (
+  _previous: StyleSpecification | undefined,
+  next: StyleSpecification
+): StyleSpecification => ({
+  ...next,
+  layers: next.layers.flatMap(plain),
+  sprite: undefined,
+});
+
 const addLayers = (map: MapLibre) => {
-  addBadges(map);
+  addImages(map);
 
   const paint = PAINT[scheme()];
   const width: ExpressionSpecification = ["get", "width"];
@@ -205,8 +278,12 @@ const addLayers = (map: MapLibre) => {
     .layers.find(({ type }) => type === "symbol")?.id;
 
   map.addSource("roads", { data: roadsData([]), type: "geojson" });
-  map.addSource("ranks", { data: ranksData([], null, false), type: "geojson" });
+  map.addSource("ranks", {
+    data: badgesData([], null, false),
+    type: "geojson",
+  });
   map.addSource("origin", { data: pointData(null), type: "geojson" });
+  map.addSource("near-end", { data: pointData(null), type: "geojson" });
 
   map.addLayer(
     {
@@ -292,18 +369,17 @@ const addLayers = (map: MapLibre) => {
     type: "circle",
   });
   map.addLayer({
+    id: "near-end",
+    layout: { "icon-allow-overlap": true, "icon-image": "near-end" },
+    source: "near-end",
+    type: "symbol",
+  });
+  map.addLayer({
     id: "ranks",
     layout: {
-      "icon-image": ["case", ["get", "focus"], "badge-focus", "badge"],
+      "icon-image": ["get", "icon"],
       "icon-padding": 1,
-      "symbol-sort-key": ["case", ["get", "focus"], 0, ["get", "rank"]],
-      "text-field": ["get", "label"],
-      "text-font": ["Noto Sans Bold"],
-      "text-padding": 1,
-      "text-size": 15,
-    },
-    paint: {
-      "text-color": ["case", ["get", "focus"], "#0a0a0a", "#ffffff"],
+      "symbol-sort-key": ["get", "order"],
     },
     source: "ranks",
     type: "symbol",
@@ -313,7 +389,7 @@ const addLayers = (map: MapLibre) => {
 const FADED = ["roads-casing", "roads-unknown", "roads-known"];
 
 const syncFocus = (map: MapLibre, props: Props) => {
-  const { drawn, focusId, story, origin } = props;
+  const { badges, focusId, story, origin, nearEnd } = props;
   const id = focusId ?? "";
 
   map.setFilter("roads-focus", ["==", ["get", "id"], id]);
@@ -328,8 +404,11 @@ const syncFocus = (map: MapLibre, props: Props) => {
 
   void map
     .getSource<GeoJSONSource>("ranks")
-    ?.setData(ranksData(drawn, focusId, story));
+    ?.setData(badgesData(badges, focusId, story));
   void map.getSource<GeoJSONSource>("origin")?.setData(pointData(origin));
+  void map
+    .getSource<GeoJSONSource>("near-end")
+    ?.setData(pointData(story ? nearEnd : null));
 };
 
 const syncRoads = (map: MapLibre, drawn: Drawn[]) => {
@@ -380,9 +459,9 @@ const createMap = (
     container: element,
     fitBoundsOptions: { maxZoom: 13, padding: PADDING },
     pitchWithRotate: false,
-    style: STYLES[scheme()],
   });
 
+  map.setStyle(STYLES[scheme()], { transformStyle: lighten });
   map.touchZoomRotate.disableRotation();
 
   map.on("style.load", () => {
@@ -422,7 +501,7 @@ export const MapView = (props: Props) => {
   const ready = useRef(false);
   const latest = useRef(props);
   const cameraKey = props.camera?.key ?? null;
-  const { drawn, focusId, story, origin } = props;
+  const { drawn, badges, focusId, story, origin, nearEnd } = props;
 
   useEffect(() => {
     latest.current = props;
@@ -438,13 +517,14 @@ export const MapView = (props: Props) => {
     if (map.current && ready.current) {
       syncFocus(map.current, {
         ...latest.current,
-        drawn,
+        badges,
         focusId,
+        nearEnd,
         origin,
         story,
       });
     }
-  }, [drawn, focusId, story, origin]);
+  }, [badges, focusId, story, origin, nearEnd]);
 
   useEffect(() => {
     const instance = container.current
@@ -457,7 +537,7 @@ export const MapView = (props: Props) => {
 
     const restyle = () => {
       ready.current = false;
-      instance?.setStyle(STYLES[scheme()]);
+      instance?.setStyle(STYLES[scheme()], { transformStyle: lighten });
     };
 
     media.addEventListener("change", restyle);

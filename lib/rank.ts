@@ -41,7 +41,7 @@ const ends = (road: Road, origin: Point): [Point, Point] => {
     : [last, first];
 };
 
-const quality = (road: Road, qualities: Quality[]) => {
+export const quality = (road: Road, qualities: Quality[]) => {
   const average =
     qualities.length === 0
       ? 50

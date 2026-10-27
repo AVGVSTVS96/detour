@@ -6,7 +6,7 @@ import type { Closure } from "@/lib/closure";
 import { cellsAround, cellsIn } from "@/lib/geo";
 import type { Point } from "@/lib/geo";
 import { readJson } from "@/lib/json";
-import { inReach, rank, toTime } from "@/lib/rank";
+import { inReach, quality, rank, toTime } from "@/lib/rank";
 import type { Ranked } from "@/lib/rank";
 import type { Quality, Road } from "@/lib/road";
 import { useDriveTimes } from "@/lib/use-drive-times";
@@ -111,25 +111,23 @@ export const useDrives = (picks: Picks) => {
     [opened, ranked, here, closures, times]
   );
 
-  const drawn = useMemo(() => {
-    const badges = new Map(
-      ranked.slice(0, BADGES).map(({ road }, index) => [road.id, index + 1])
-    );
+  const drawn = useMemo(
+    () =>
+      (opened && !roads.includes(opened) ? [...roads, opened] : roads).map(
+        (road) => ({ road, value: quality(road, qualities) })
+      ),
+    [roads, opened, qualities]
+  );
 
-    const every =
-      opened && !roads.includes(opened) ? [...roads, opened] : roads;
+  const badges = useMemo(
+    () =>
+      ranked.slice(0, BADGES).map(({ road }, index) => ({
+        id: road.id,
+        point: road.line[Math.floor(road.line.length / 2)] ?? road.line[0],
+        rank: index + 1,
+      })),
+    [ranked]
+  );
 
-    return inReach(
-      every,
-      here ?? [0, 0],
-      qualities,
-      Number.POSITIVE_INFINITY
-    ).map(({ road, value }) => ({
-      rank: badges.get(road.id) ?? null,
-      road,
-      value,
-    }));
-  }, [roads, ranked, here, qualities, opened]);
-
-  return { drawn, loading, ranked, story };
+  return { badges, drawn, loading, ranked, story };
 };

@@ -139,7 +139,9 @@ export const Card = ({
           {pavement.word}
         </span>
       </p>
-      <Directions ranked={ranked} />
+      <div className="mt-auto">
+        <Directions ranked={ranked} />
+      </div>
     </article>
   );
 };
@@ -186,7 +188,13 @@ const Pavement = ({ ranked }: { ranked: Ranked }) => {
       </h3>
       <Strip paving={pavingFrom(road, start)} tall />
       <p className="flex justify-between tabular-nums">
-        <span>Near end</span>
+        <span className="inline-flex items-center gap-1.5">
+          <span
+            aria-hidden
+            className="size-3.5 border-[3px] border-paper bg-ink outline-2 outline-ink"
+          />
+          Near end
+        </span>
         <span>Far end, {road.miles} mi</span>
       </p>
       <ul className="flex flex-wrap gap-x-4 gap-y-1">

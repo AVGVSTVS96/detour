@@ -357,6 +357,14 @@ const Sheet = ({
   );
 };
 
+const originKey = ({ pin, here }: ReturnType<typeof useOrigin>) =>
+  pin ? `${pin.name}@${pin.point.join(",")}` : String(here !== null);
+
+const movedAway = (view: View | null, here: Point | null) =>
+  view?.user === true &&
+  view.zoom >= 8 &&
+  (here === null || distance(view.center, here) > AWAY);
+
 export const Detour = () => {
   const origin = useOrigin();
   const { here } = origin;
@@ -369,7 +377,7 @@ export const Detour = () => {
   const [screenOn, setScreenOn] = useWakeLock();
   const search = useSearch(here);
 
-  const { drawn, loading, ranked, story } = useDrives({
+  const { badges, drawn, loading, ranked, story } = useDrives({
     here,
     opened,
     qualities,
@@ -377,16 +385,13 @@ export const Detour = () => {
     seen: view,
   });
 
-  const cardsKey = `${here?.join(",")}|${qualities.join(",")}|${reach}|${recenter}`;
+  const cardsKey = `${originKey(origin)}|${qualities.join(",")}|${reach}|${recenter}`;
   const focusIndex = focus.key === cardsKey ? focus.index : 0;
   const focused = ranked.at(focusIndex) ?? null;
   const camera = cameraFor(story, here, loading, ranked, focusIndex, cardsKey);
   const showMap = camera !== null || (origin.settled && here === null);
 
-  const away =
-    view?.user === true &&
-    view.zoom >= 8 &&
-    (here === null || distance(view.center, here) > AWAY);
+  const away = movedAway(view, here);
 
   return (
     <main className="flex h-dvh flex-col overflow-hidden">
@@ -394,8 +399,10 @@ export const Detour = () => {
         {showMap && (
           <MapView
             camera={camera}
+            badges={badges}
             drawn={drawn}
             focusId={story?.road.id ?? focused?.road.id ?? null}
+            nearEnd={story?.start ?? null}
             onSelect={(id) => {
               setOpened(drawn.find(({ road }) => road.id === id)?.road ?? null);
             }}

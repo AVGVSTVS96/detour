@@ -58,57 +58,74 @@ const addLayers = (map: MapLibre, dark: boolean) => {
   const ink = dark ? "#f2f2f2" : "#0a0a0a";
   const paper = dark ? "#0b0b0b" : "#ffffff";
   const grades = dark ? GRADE_COLORS.dark : GRADE_COLORS.light;
+
+  const before = map
+    .getStyle()
+    .layers.find(({ type }) => type === "symbol")?.id;
+
   map.addSource("roads", { data: roadsData([]), type: "geojson" });
   map.addSource("selected", { data: selectedData(null), type: "geojson" });
   map.addSource("origin", { data: pointData(null), type: "geojson" });
-  map.addLayer({
-    id: "roads-casing",
-    layout: { "line-cap": "round", "line-join": "round" },
-    paint: {
-      "line-color": paper,
-      "line-width": ["case", ["<", ["get", "rank"], 10], 8, 5],
+  map.addLayer(
+    {
+      id: "roads-casing",
+      layout: { "line-cap": "round", "line-join": "round" },
+      paint: {
+        "line-color": paper,
+        "line-width": ["case", ["<", ["get", "rank"], 10], 8, 5],
+      },
+      source: "roads",
+      type: "line",
     },
-    source: "roads",
-    type: "line",
-  });
-  map.addLayer({
-    id: "roads-line",
-    layout: { "line-cap": "round", "line-join": "round" },
-    paint: {
-      "line-color": ink,
-      "line-opacity": ["case", ["<", ["get", "rank"], 10], 1, 0.75],
-      "line-width": ["case", ["<", ["get", "rank"], 10], 4, 2.5],
+    before
+  );
+  map.addLayer(
+    {
+      id: "roads-line",
+      layout: { "line-cap": "round", "line-join": "round" },
+      paint: {
+        "line-color": ink,
+        "line-opacity": ["case", ["<", ["get", "rank"], 10], 1, 0.75],
+        "line-width": ["case", ["<", ["get", "rank"], 10], 4, 2.5],
+      },
+      source: "roads",
+      type: "line",
     },
-    source: "roads",
-    type: "line",
-  });
-  map.addLayer({
-    id: "selected-casing",
-    layout: { "line-cap": "round", "line-join": "round" },
-    paint: { "line-color": ink, "line-width": 11 },
-    source: "selected",
-    type: "line",
-  });
-  map.addLayer({
-    id: "selected-line",
-    layout: { "line-cap": "butt", "line-join": "round" },
-    paint: {
-      "line-color": [
-        "match",
-        ["get", "grade"],
-        1,
-        grades[1] ?? ink,
-        2,
-        grades[2] ?? ink,
-        3,
-        grades[3] ?? ink,
-        grades[0] ?? ink,
-      ],
-      "line-width": 6,
+    before
+  );
+  map.addLayer(
+    {
+      id: "selected-casing",
+      layout: { "line-cap": "round", "line-join": "round" },
+      paint: { "line-color": ink, "line-width": 11 },
+      source: "selected",
+      type: "line",
     },
-    source: "selected",
-    type: "line",
-  });
+    before
+  );
+  map.addLayer(
+    {
+      id: "selected-line",
+      layout: { "line-cap": "butt", "line-join": "round" },
+      paint: {
+        "line-color": [
+          "match",
+          ["get", "grade"],
+          1,
+          grades[1] ?? ink,
+          2,
+          grades[2] ?? ink,
+          3,
+          grades[3] ?? ink,
+          grades[0] ?? ink,
+        ],
+        "line-width": 6,
+      },
+      source: "selected",
+      type: "line",
+    },
+    before
+  );
   map.addLayer({
     id: "origin-dot",
     paint: {

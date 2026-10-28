@@ -16,7 +16,7 @@ rider reports ────────┘                           │
 phone location ─▶ nearby squares ─▶ rank ─────────┴▶ drive times (OSRM) ─▶ list + map
 ```
 
-A road is one named road (or route number) cut where it changes character: at long straights, and where it passes between open country and built-up areas. Roads under a mile are dropped.
+A road is one named road (or route number), carried over bridges and tunnels whatever they're named, never turning back onto the other side of a divided road, and cut where it changes character: at long straights, and where it passes between open country and built-up areas. Roads over 37 miles are cut into even parts; roads under a mile are dropped.
 
 - **Twisty**: curvature per mile from OSM geometry (tight curves weigh more), on a fixed scale.
 - **Scenic**: Caltrans scenic highway status, the coast, OSM and Caltrans viewpoints, open country (few roads around) and how much the road climbs.

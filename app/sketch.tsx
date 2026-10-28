@@ -114,6 +114,21 @@ const projector = (points: Point[], [width, height]: [number, number]) => {
   ];
 };
 
+const traced = (line: Point[], every: number) =>
+  line.flatMap(([x, y], index): Point[] => {
+    const [fromX, fromY] = line[index - 1] ?? [x, y];
+
+    const steps = Math.max(
+      1,
+      Math.ceil(Math.hypot(x - fromX, y - fromY) / every)
+    );
+
+    return Array.from({ length: steps }, (_, step): Point => [
+      fromX + ((x - fromX) * (step + 1)) / steps,
+      fromY + ((y - fromY) * (step + 1)) / steps,
+    ]);
+  });
+
 const pathOf = (line: Point[], toXY: (point: Point) => Point) =>
   line
     .map((point) => {
@@ -149,7 +164,14 @@ const Drawing = ({
     towns.filter(([name]) => name !== place),
     toXY,
     size,
-    [toXY(origin), toXY(shown.start)]
+    [
+      toXY(origin),
+      toXY(shown.start),
+      ...traced(
+        shown.road.line.map((point) => toXY(point)),
+        8
+      ),
+    ]
   );
 
   const placeEnd = youX > size[0] / 2;

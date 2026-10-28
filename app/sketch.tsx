@@ -198,16 +198,6 @@ const Drawing = ({
               />,
             ]
       )}
-      <line
-        className="stroke-ink"
-        strokeDasharray="1 9"
-        strokeLinecap="round"
-        strokeWidth={4}
-        x1={youX}
-        x2={startX}
-        y1={youY}
-        y2={startY}
-      />
       {behind && (
         <polyline
           className="fill-none stroke-mute opacity-50"

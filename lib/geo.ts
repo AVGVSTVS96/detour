@@ -88,3 +88,27 @@ export const cellsAround = ([lon, lat]: Point, meters: number) => {
 
   return cellsIn([lon - dLon, lat - dLat], [lon + dLon, lat + dLat]);
 };
+
+export const halfway = (line: Point[]): Point => {
+  let left = 0;
+
+  for (let index = 1; index < line.length; index += 1) {
+    left += distance(line[index - 1], line[index]) / 2;
+  }
+
+  for (let index = 1; index < line.length; index += 1) {
+    const from = line[index - 1];
+    const to = line[index];
+    const step = distance(from, to);
+
+    if (step >= left) {
+      const t = step === 0 ? 0 : left / step;
+
+      return [from[0] + (to[0] - from[0]) * t, from[1] + (to[1] - from[1]) * t];
+    }
+
+    left -= step;
+  }
+
+  return line[0];
+};

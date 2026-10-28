@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 
 import type { Closure } from "@/lib/closure";
-import { cellsAround, cellsIn } from "@/lib/geo";
+import { cellsAround, cellsIn, halfway } from "@/lib/geo";
 import type { Point } from "@/lib/geo";
 import { readJson } from "@/lib/json";
 import { inReach, quality, rank, toTime } from "@/lib/rank";
@@ -123,7 +123,7 @@ export const useDrives = (picks: Picks) => {
     () =>
       ranked.slice(0, BADGES).map(({ road }, index) => ({
         id: road.id,
-        point: road.line[Math.floor(road.line.length / 2)] ?? road.line[0],
+        point: halfway(road.line),
         rank: index + 1,
       })),
     [ranked]

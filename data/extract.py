@@ -61,6 +61,7 @@ with open(roads_out, "w") as roads, open(places_out, "w") as places, open(scener
             "surface": tags.get("surface", ""),
             "smoothness": tags.get("smoothness", ""),
             "oneway": tags.get("oneway", "") in {"yes", "-1"},
+            "structure": tags.get("bridge", "no") != "no" or tags.get("tunnel", "no") != "no",
             "nodes": [nodes[0].ref, nodes[-1].ref],
             "coords": coords,
         }) + "\n")

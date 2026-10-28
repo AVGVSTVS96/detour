@@ -61,11 +61,46 @@ interface Span {
   curvature: number;
 }
 
+const evenly = (span: Span, meters: number[], bends: number[]) => {
+  const parts = Math.ceil(span.meters / MAX_PIECE);
+  const found: Span[] = [];
+
+  let current: Span = {
+    curvature: 0,
+    from: span.from,
+    meters: 0,
+    to: span.from,
+  };
+
+  for (let index = span.from + 1; index <= span.to; index += 1) {
+    current.to = index;
+    current.meters += meters[index] ?? 0;
+    current.curvature += bends[index] ?? 0;
+
+    if (found.length < parts - 1 && current.meters >= span.meters / parts) {
+      found.push(current);
+      current = { curvature: 0, from: index, meters: 0, to: index };
+    }
+  }
+
+  return [...found, current];
+};
+
 export const pieces = (line: Point[], scenicAt: (point: Point) => boolean) => {
   const radii = line.map((point, index) =>
     index === 0 || index === line.length - 1
       ? Number.POSITIVE_INFINITY
       : radius(line[index - 1], point, line[index + 1])
+  );
+
+  const meters = line.map((point, index) =>
+    index === 0 ? 0 : distance(line[index - 1], point)
+  );
+
+  const bends = meters.map(
+    (length, index) =>
+      length *
+      (index === 0 ? 0 : curveWeight(Math.min(radii[index - 1], radii[index])))
   );
 
   const found: Span[] = [];
@@ -94,34 +129,28 @@ export const pieces = (line: Point[], scenicAt: (point: Point) => boolean) => {
   };
 
   for (let index = 1; index < line.length; index += 1) {
-    const meters = distance(line[index - 1], line[index]);
-    const weight = curveWeight(Math.min(radii[index - 1], radii[index]));
-
-    if (weight === 0) {
+    if (bends[index] === 0) {
       straight.to = index;
-      straight.meters += meters;
+      straight.meters += meters[index];
       continue;
     }
 
     closeStraight();
     straight = { curvature: 0, from: index, meters: 0, to: index };
     current.to = index;
-    current.meters += meters;
-    current.curvature += meters * weight;
-
-    if (current.meters >= MAX_PIECE) {
-      flush();
-      current = { curvature: 0, from: index, meters: 0, to: index };
-    }
+    current.meters += meters[index];
+    current.curvature += bends[index];
   }
 
   closeStraight();
   flush();
 
-  return found.map((span): Piece => ({
-    ...span,
-    line: line.slice(span.from, span.to + 1),
-  }));
+  return found
+    .flatMap((span) => evenly(span, meters, bends))
+    .map((span): Piece => ({
+      ...span,
+      line: line.slice(span.from, span.to + 1),
+    }));
 };
 
 export const splitWhere = (

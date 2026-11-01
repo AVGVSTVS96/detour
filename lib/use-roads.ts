@@ -16,7 +16,7 @@ const readIndex = async () => {
   return await readJson<RoadIndex>(response);
 };
 
-const loadIndex = async () => {
+export const loadIndex = async () => {
   index ??= readIndex();
 
   return await index;

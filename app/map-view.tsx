@@ -2,11 +2,14 @@
 
 import * as maplibregl from "maplibre-gl";
 import type { GeoJSONSource, Map as MapLibre } from "maplibre-gl";
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { RefObject } from "react";
 
+import { cellsIn } from "@/lib/geo";
 import type { Point } from "@/lib/geo";
 import type { Ranked } from "@/lib/rank";
+import { detailed } from "@/lib/road";
+import { DETAIL_ZOOM, useDetail } from "@/lib/use-detail";
 import { pavingLines } from "@/lib/verdict";
 
 const WORKER = "/maplibre-gl-worker.mjs";
@@ -223,17 +226,44 @@ export const MapView = ({
   const container = useRef<HTMLDivElement>(null);
   const map = useRef<MapLibre | null>(null);
   const ready = useRef(false);
-  const latest = useRef<Latest>({ onMove, onSelect, origin, ranked, selected });
+  const [shown, setShown] = useState<string[]>([]);
+  const detail = useDetail(shown);
+
+  const drawn = useMemo(
+    () =>
+      ranked.map((item) => ({ ...item, road: detailed(item.road, detail) })),
+    [ranked, detail]
+  );
+
+  const picked = useMemo(
+    () => selected && { ...selected, road: detailed(selected.road, detail) },
+    [selected, detail]
+  );
+
+  const latest = useRef<Latest>({
+    onMove,
+    onSelect,
+    origin,
+    ranked: drawn,
+    selected: picked,
+  });
+
   const selectedId = selected?.road.id ?? null;
   const topId = ranked[0]?.road.id ?? null;
 
   useEffect(() => {
-    latest.current = { onMove, onSelect, origin, ranked, selected };
+    latest.current = {
+      onMove,
+      onSelect,
+      origin,
+      ranked: drawn,
+      selected: picked,
+    };
 
     if (map.current && ready.current) {
       syncData(map.current, latest.current);
     }
-  }, [onMove, onSelect, origin, ranked, selected]);
+  }, [onMove, onSelect, origin, drawn, picked]);
 
   useEffect(() => {
     const instance = container.current
@@ -246,6 +276,31 @@ export const MapView = ({
       ready.current = false;
       map.current = null;
       instance?.remove();
+    };
+  }, []);
+
+  useEffect(() => {
+    const instance = map.current;
+
+    const look = () => {
+      if (instance) {
+        const bounds = instance.getBounds();
+
+        setShown(
+          instance.getZoom() >= DETAIL_ZOOM
+            ? cellsIn(
+                [bounds.getWest(), bounds.getSouth()],
+                [bounds.getEast(), bounds.getNorth()]
+              )
+            : []
+        );
+      }
+    };
+
+    instance?.on("moveend", look);
+
+    return () => {
+      instance?.off("moveend", look);
     };
   }, []);
 

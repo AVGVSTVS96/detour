@@ -273,9 +273,16 @@ const addLayers = (map: MapLibre) => {
   const paint = PAINT[scheme()];
   const width: ExpressionSpecification = ["get", "width"];
 
-  const before = map
-    .getStyle()
-    .layers.find(({ type }) => type === "symbol")?.id;
+  const { layers } = map.getStyle();
+
+  const lastRoad = layers.findLastIndex(
+    (layer) =>
+      layer.type === "line" && layer["source-layer"] === "transportation"
+  );
+
+  const before = layers
+    .slice(lastRoad + 1)
+    .find(({ type }) => type === "symbol")?.id;
 
   map.addSource("roads", { data: roadsData([]), type: "geojson" });
   map.addSource("ranks", {

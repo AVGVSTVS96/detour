@@ -62,9 +62,16 @@ const addLayers = (map: MapLibre, dark: boolean) => {
   const paper = dark ? "#0b0b0b" : "#ffffff";
   const grades = dark ? GRADE_COLORS.dark : GRADE_COLORS.light;
 
-  const before = map
-    .getStyle()
-    .layers.find(({ type }) => type === "symbol")?.id;
+  const { layers } = map.getStyle();
+
+  const lastRoad = layers.findLastIndex(
+    (layer) =>
+      layer.type === "line" && layer["source-layer"] === "transportation"
+  );
+
+  const before = layers
+    .slice(lastRoad + 1)
+    .find(({ type }) => type === "symbol")?.id;
 
   map.addSource("roads", { data: roadsData([]), type: "geojson" });
   map.addSource("selected", { data: selectedData(null), type: "geojson" });

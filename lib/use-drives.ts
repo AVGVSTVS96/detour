@@ -8,7 +8,9 @@ import type { Point } from "@/lib/geo";
 import { readJson } from "@/lib/json";
 import { inReach, quality, rank, toTime } from "@/lib/rank";
 import type { Ranked } from "@/lib/rank";
+import { detailed } from "@/lib/road";
 import type { Quality, Road } from "@/lib/road";
+import { DETAIL_ZOOM, useDetail } from "@/lib/use-detail";
 import { useDriveTimes } from "@/lib/use-drive-times";
 import { useRoads } from "@/lib/use-roads";
 
@@ -76,7 +78,7 @@ const storyOf = (
   null;
 
 export const useDrives = (picks: Picks) => {
-  const { here, qualities, reach, opened } = picks;
+  const { here, qualities, reach, opened, seen } = picks;
   const { roads, loading } = useRoads(cellsFor(picks));
   const closures = useClosures();
 
@@ -111,12 +113,22 @@ export const useDrives = (picks: Picks) => {
     [opened, ranked, here, closures, times]
   );
 
+  const detail = useDetail(
+    seen && seen.zoom >= DETAIL_ZOOM
+      ? cellsIn(seen.bounds[0], seen.bounds[1])
+      : []
+  );
+
   const drawn = useMemo(
     () =>
-      (opened && !roads.includes(opened) ? [...roads, opened] : roads).map(
-        (road) => ({ road, value: quality(road, qualities) })
-      ),
-    [roads, opened, qualities]
+      (opened && !roads.some(({ id }) => id === opened.id)
+        ? [...roads, opened]
+        : roads
+      ).map((road) => ({
+        road: detailed(road, detail),
+        value: quality(road, qualities),
+      })),
+    [roads, opened, qualities, detail]
   );
 
   const badges = useMemo(

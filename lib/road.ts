@@ -67,3 +67,14 @@ export const unpackRoad = (road: PackedRoad): Road => ({
   ...road,
   line: unpackLine(road.line),
 });
+
+export type DetailFile = [id: string, line: string][];
+
+export const unpackDetail = (file: DetailFile) =>
+  new Map(file.map(([id, line]): [string, Point[]] => [id, unpackLine(line)]));
+
+export const detailed = (road: Road, detail: Map<string, Point[]>): Road => {
+  const line = detail.get(road.id);
+
+  return line === undefined ? road : { ...road, line };
+};

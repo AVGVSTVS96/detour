@@ -22,10 +22,11 @@ import type { Rider } from "@/data/riders";
 import { fetchLayer, fetchPavement, LAYERS } from "@/data/sources";
 import { loadSurveys } from "@/data/surveys";
 import { loadBuiltUp, loadElevation } from "@/data/terrain";
-import { cellOf, distance, METERS_PER_MILE } from "@/lib/geo";
+import { cellOf, distance, METERS_PER_MILE, packLine } from "@/lib/geo";
 import type { Point } from "@/lib/geo";
 import { packRoad } from "@/lib/road";
 import type {
+  DetailFile,
   Grade,
   PavementSource,
   Report,
@@ -38,7 +39,8 @@ const BUILD = new Date().toISOString().slice(0, 16).replaceAll(/[-:T]/gu, "");
 const FEET = 3.28084;
 const BUILT_UP = 12;
 const OPEN = 4;
-const LINE_METERS = 1;
+const OVERVIEW_METERS = 12;
+const DETAIL_METERS = 1;
 
 const SCENIC_WEIGHT = new Map([
   ["Connecting Federal Highway & National Scenic Byway", 1],
@@ -750,9 +752,11 @@ const attachRiders = (
   });
 };
 
-const writeDatabase = (
-  all: (Road & { listed: boolean; built: number; ways: number[] })[]
-) => {
+type Shipped = Road & { detail: Point[] };
+
+type Stored = Shipped & { listed: boolean; built: number; ways: number[] };
+
+const writeDatabase = (all: Stored[]) => {
   const db = new Database(`${CACHE}/roads.db`);
   db.run("DROP TABLE IF EXISTS roads");
   db.run("DROP TABLE IF EXISTS meta");
@@ -796,7 +800,7 @@ const writeDatabase = (
         road.riders,
         JSON.stringify(road.reports),
         JSON.stringify(road.ways),
-        JSON.stringify(road.line)
+        JSON.stringify(road.detail)
       );
     }
 
@@ -810,11 +814,11 @@ const writeDatabase = (
   db.close();
 };
 
-const writeSquares = async (roads: Road[]) => {
-  const cells = new Map<string, Road[]>();
+const writeSquares = async (roads: Shipped[]) => {
+  const cells = new Map<string, Shipped[]>();
 
   for (const road of roads) {
-    for (const cell of new Set(road.line.map((point) => cellOf(point)))) {
+    for (const cell of new Set(road.detail.map((point) => cellOf(point)))) {
       cells.set(cell, [...(cells.get(cell) ?? []), road]);
     }
   }
@@ -828,13 +832,23 @@ const writeSquares = async (roads: Road[]) => {
   );
   await mkdir(`${OUT}/${BUILD}`, { recursive: true });
   await Promise.all(
-    [...cells].map(
-      async ([cell, cellRoads]) =>
-        await Bun.write(
-          `${OUT}/${BUILD}/${cell}.json`,
-          JSON.stringify(cellRoads.map((road) => packRoad(road)))
+    [...cells].map(async ([cell, cellRoads]) => {
+      const detail: DetailFile = cellRoads.map(({ id, detail: line }) => [
+        id,
+        packLine(line),
+      ]);
+
+      await Bun.write(
+        `${OUT}/${BUILD}/${cell}.json`,
+        JSON.stringify(
+          cellRoads.map(({ detail: _detail, ...road }) => packRoad(road))
         )
-    )
+      );
+      await Bun.write(
+        `${OUT}/${BUILD}/${cell}.detail.json`,
+        JSON.stringify(detail)
+      );
+    })
   );
 
   const index: RoadIndex = {
@@ -895,7 +909,7 @@ const build = async () => {
   }
 
   const attached = attachRiders(sources.riders, stretches, sources.builtUp);
-  const all: (Road & { listed: boolean; built: number; ways: number[] })[] = [];
+  const all: Stored[] = [];
   const seen = new Map<string, number>();
 
   for (const [index, stretch] of stretches.entries()) {
@@ -917,8 +931,9 @@ const build = async () => {
     all.push({
       ...shipped,
       built: density,
+      detail: round(simplify(stretch.road, DETAIL_METERS)),
       id: count === 1 ? base : `${base}-${count}`,
-      line: round(simplify(stretch.road, LINE_METERS)),
+      line: round(simplify(stretch.road, OVERVIEW_METERS)),
       listed: listed(road),
       town: townNear(sources, middle),
       ways: [...ways],
@@ -926,7 +941,7 @@ const build = async () => {
   }
 
   const keptGrid = new LineGrid<string>(0.005);
-  const roads: Road[] = [];
+  const roads: Shipped[] = [];
 
   for (const road of all
     .filter((item) => item.listed)
@@ -934,7 +949,7 @@ const build = async () => {
       (a, b) =>
         b.riders - a.riders || b.twisty + b.scenic - (a.twisty + a.scenic)
     )) {
-    const points = samples(road.line, 200);
+    const points = samples(road.detail, 200);
 
     const overlapping = points.filter(
       ({ point }) => keptGrid.nearest(point, 40) !== null
@@ -945,7 +960,7 @@ const build = async () => {
       continue;
     }
 
-    keptGrid.add(road.line, road.id);
+    keptGrid.add(road.detail, road.id);
     const { listed: _listed, built: _built, ways: _ways, ...shipped } = road;
     roads.push(shipped);
   }

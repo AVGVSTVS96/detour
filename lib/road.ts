@@ -1,3 +1,4 @@
+import { packLine, unpackLine } from "@/lib/geo";
 import type { Point } from "@/lib/geo";
 
 export type Grade = 1 | 2 | 3;
@@ -54,3 +55,15 @@ export interface RoadIndex {
   build: string;
   cells: string[];
 }
+
+export type PackedRoad = Omit<Road, "line"> & { line: string };
+
+export const packRoad = (road: Road): PackedRoad => ({
+  ...road,
+  line: packLine(road.line),
+});
+
+export const unpackRoad = (road: PackedRoad): Road => ({
+  ...road,
+  line: unpackLine(road.line),
+});

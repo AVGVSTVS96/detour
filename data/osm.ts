@@ -233,7 +233,7 @@ export const chain = (ways: Way[]) => {
         owners.push(...owned);
       } else {
         coords.unshift(...added.toReversed());
-        owners.unshift(...owned);
+        owners.splice(0, 1, ...owned, next);
       }
     }
   };

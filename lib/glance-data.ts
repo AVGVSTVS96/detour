@@ -1,7 +1,7 @@
 import type { Cell, Found, PackedCell, SearchFile } from "@/lib/glance";
 import { readJson } from "@/lib/json";
-import { unpackRoad } from "@/lib/road";
-import type { PackedRoad, Road, RoadIndex } from "@/lib/road";
+import { detailed, unpackDetail, unpackRoad } from "@/lib/road";
+import type { DetailFile, PackedRoad, Road, RoadIndex } from "@/lib/road";
 
 const cells = new Map<string, Promise<Cell>>();
 const fullCells = new Map<string, Promise<Road[]>>();
@@ -35,9 +35,14 @@ const readBest = async (path: string): Promise<Cell> => {
 };
 
 const readAll = async (path: string) => {
-  const roads = await fetchJson<PackedRoad[]>(path, []);
+  const [roads, detail] = await Promise.all([
+    fetchJson<PackedRoad[]>(`${path}.json`, []),
+    fetchJson<DetailFile>(`${path}.detail.json`, []),
+  ]);
 
-  return roads.map((road) => unpackRoad(road));
+  const lines = unpackDetail(detail);
+
+  return roads.map((road) => detailed(unpackRoad(road), lines));
 };
 
 export const loadIndex = async () => {
@@ -52,7 +57,7 @@ export const loadBest = async (build: string, key: string) =>
   await once(cells, `/glance/${build}/${key}.json`, readBest);
 
 export const loadAll = async (build: string, key: string) =>
-  await once(fullCells, `/roads/${build}/${key}.json`, readAll);
+  await once(fullCells, `/roads/${build}/${key}`, readAll);
 
 const readSearch = async (): Promise<Found> => {
   const { build } = await loadIndex();

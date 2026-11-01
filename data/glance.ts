@@ -21,8 +21,8 @@ import type {
   Town,
 } from "@/lib/glance";
 import { readJson } from "@/lib/json";
-import { packRoad, unpackRoad } from "@/lib/road";
-import type { PackedRoad, Road, RoadIndex } from "@/lib/road";
+import { detailed, packRoad, unpackDetail, unpackRoad } from "@/lib/road";
+import type { DetailFile, PackedRoad, Road, RoadIndex } from "@/lib/road";
 
 const ROADS = `${import.meta.dir}/../public/roads`;
 const OUT = `${import.meta.dir}/../public/glance`;
@@ -93,7 +93,12 @@ await mkdir(`${OUT}/${build}`, { recursive: true });
 const byCell = await Promise.all(
   cells.map(async (key) => {
     const packed = await read<PackedRoad[]>(`${ROADS}/${build}/${key}.json`);
-    const roads = packed.map((road) => unpackRoad(road));
+
+    const lines = unpackDetail(
+      await read<DetailFile>(`${ROADS}/${build}/${key}.detail.json`)
+    );
+
+    const roads = packed.map((road) => detailed(unpackRoad(road), lines));
     const named = roads.filter((road) => title(road) !== "");
 
     const cell: PackedCell = {

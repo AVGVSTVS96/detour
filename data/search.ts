@@ -1,6 +1,7 @@
 import type { Point } from "@/lib/geo";
 import { readJson } from "@/lib/json";
-import type { PavementSource, Road, RoadIndex } from "@/lib/road";
+import { unpackRoad } from "@/lib/road";
+import type { PackedRoad, PavementSource, Road, RoadIndex } from "@/lib/road";
 import type { Directory, Listing, Town } from "@/lib/search";
 import { pavementVerdict } from "@/lib/verdict";
 
@@ -38,10 +39,13 @@ const tenths = (paving: Road["paving"]): Road["paving"] =>
     : [];
 
 const lists = await Promise.all(
-  cells.map(
-    async (cell) =>
-      await readJson<Road[]>(Bun.file(`${ROADS}/${build}/${cell}.json`))
-  )
+  cells.map(async (cell) => {
+    const packed = await readJson<PackedRoad[]>(
+      Bun.file(`${ROADS}/${build}/${cell}.json`)
+    );
+
+    return packed.map((road) => unpackRoad(road));
+  })
 );
 
 const roads = new Map<string, Listing>();

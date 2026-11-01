@@ -14,20 +14,22 @@ import {
 } from "@/lib/glance";
 import type {
   BestRow,
-  Cell,
+  PackedCell,
   PlaceRow,
   RoadRow,
   SearchFile,
   Town,
 } from "@/lib/glance";
 import { readJson } from "@/lib/json";
-import type { Road, RoadIndex } from "@/lib/road";
+import { packRoad, unpackRoad } from "@/lib/road";
+import type { PackedRoad, Road, RoadIndex } from "@/lib/road";
 
 const ROADS = `${import.meta.dir}/../public/roads`;
 const OUT = `${import.meta.dir}/../public/glance`;
 const PER_CELL = 40;
 const AROUND = 40_000;
 const BESTS = 3;
+const SKETCH_PIXELS = 1000;
 
 const read = async <T>(path: string) => await readJson<T>(Bun.file(path));
 
@@ -42,15 +44,25 @@ const roundPoint = ([lon, lat]: Point, places: number): Point => [
   round(lat, places),
 ];
 
-const lighter = (road: Road): Road => ({
-  ...road,
-  line: simplify(road.line, 20).map((point) => roundPoint(point, 4)),
-  reports: road.reports
-    .filter(({ topic }) => topic === "pavement")
-    .toSorted((a, b) => (b.year ?? 0) - (a.year ?? 0))
-    .slice(0, 1),
-  views: road.views.slice(0, 3),
-});
+const lighter = (road: Road): PackedRoad => {
+  const lons = road.line.map(([lon]) => lon);
+  const lats = road.line.map(([, lat]) => lat);
+
+  const across = distance(
+    [Math.min(...lons), Math.min(...lats)],
+    [Math.max(...lons), Math.max(...lats)]
+  );
+
+  return packRoad({
+    ...road,
+    line: simplify(road.line, across / SKETCH_PIXELS),
+    reports: road.reports
+      .filter(({ topic }) => topic === "pavement")
+      .toSorted((a, b) => (b.year ?? 0) - (a.year ?? 0))
+      .slice(0, 1),
+    views: road.views.slice(0, 3),
+  });
+};
 
 const bestByTitle = (roads: Road[]) => {
   const best = new Map<string, Road>();
@@ -80,10 +92,11 @@ await mkdir(`${OUT}/${build}`, { recursive: true });
 
 const byCell = await Promise.all(
   cells.map(async (key) => {
-    const roads = await read<Road[]>(`${ROADS}/${build}/${key}.json`);
+    const packed = await read<PackedRoad[]>(`${ROADS}/${build}/${key}.json`);
+    const roads = packed.map((road) => unpackRoad(road));
     const named = roads.filter((road) => title(road) !== "");
 
-    const cell: Cell = {
+    const cell: PackedCell = {
       roads: bestByTitle(named)
         .toSorted((a, b) => quality(b) - quality(a))
         .slice(0, PER_CELL)

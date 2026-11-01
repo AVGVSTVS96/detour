@@ -1,6 +1,6 @@
 import { distance } from "@/lib/geo";
 import type { Point } from "@/lib/geo";
-import type { Road } from "@/lib/road";
+import type { PackedRoad, Road } from "@/lib/road";
 import { pavementVerdict, pavingShares, tagsOf } from "@/lib/verdict";
 import type { Tone } from "@/lib/verdict";
 
@@ -33,6 +33,8 @@ export interface Cell {
   roads: Road[];
   towns: Town[];
 }
+
+export type PackedCell = Omit<Cell, "roads"> & { roads: PackedRoad[] };
 
 export type RoadRow = [
   name: string,

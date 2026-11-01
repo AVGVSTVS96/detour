@@ -24,6 +24,7 @@ import { loadSurveys } from "@/data/surveys";
 import { loadBuiltUp, loadElevation } from "@/data/terrain";
 import { cellOf, distance, METERS_PER_MILE } from "@/lib/geo";
 import type { Point } from "@/lib/geo";
+import { packRoad } from "@/lib/road";
 import type {
   Grade,
   PavementSource,
@@ -37,6 +38,7 @@ const BUILD = new Date().toISOString().slice(0, 16).replaceAll(/[-:T]/gu, "");
 const FEET = 3.28084;
 const BUILT_UP = 12;
 const OPEN = 4;
+const LINE_METERS = 1;
 
 const SCENIC_WEIGHT = new Map([
   ["Connecting Federal Highway & National Scenic Byway", 1],
@@ -312,6 +314,8 @@ const ridersReading = (riders: Rider[], point: Point): Reading | null => {
 interface Stretch {
   piece: Piece;
   owners: Way[];
+  road: Point[];
+  ways: Way[];
 }
 
 type Samples = ReturnType<typeof samples>;
@@ -828,7 +832,7 @@ const writeSquares = async (roads: Road[]) => {
       async ([cell, cellRoads]) =>
         await Bun.write(
           `${OUT}/${BUILD}/${cell}.json`,
-          JSON.stringify(cellRoads)
+          JSON.stringify(cellRoads.map((road) => packRoad(road)))
         )
     )
   );
@@ -875,10 +879,15 @@ const build = async () => {
         line.slice(start, end + 1),
         (point) => scenicAt(sources, point) !== ""
       )) {
+        const from = kept[piece.from + start];
+        const to = kept[piece.to + start];
+
         if (piece.meters >= 1000) {
           stretches.push({
             owners: lineOwners,
             piece: { ...piece, from: piece.from + start, to: piece.to + start },
+            road: coords.slice(from, to + 1),
+            ways: owners.slice(from + 1, to + 1),
           });
         }
       }
@@ -901,9 +910,7 @@ const build = async () => {
     const count = (seen.get(base) ?? 0) + 1;
     seen.set(base, count);
 
-    const ways = new Set(
-      stretch.owners.slice(piece.from + 1, piece.to + 1).map((way) => way.id)
-    );
+    const ways = new Set(stretch.ways.map((way) => way.id));
 
     const { built: density, ...shipped } = road;
 
@@ -911,7 +918,7 @@ const build = async () => {
       ...shipped,
       built: density,
       id: count === 1 ? base : `${base}-${count}`,
-      line: round(simplify(piece.line, 12)),
+      line: round(simplify(stretch.road, LINE_METERS)),
       listed: listed(road),
       town: townNear(sources, middle),
       ways: [...ways],

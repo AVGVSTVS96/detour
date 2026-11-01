@@ -83,3 +83,65 @@ export const cellsAround = ([lon, lat]: Point, meters: number) => {
 
   return cells;
 };
+
+const PRECISION = 1e5;
+const ZERO = 63;
+const CHUNK = 32;
+
+const packNumber = (value: number) => {
+  let rest = value < 0 ? -2 * value - 1 : 2 * value;
+  let text = "";
+
+  while (rest >= CHUNK) {
+    text += String.fromCodePoint(ZERO + CHUNK + (rest % CHUNK));
+    rest = Math.floor(rest / CHUNK);
+  }
+
+  return text + String.fromCodePoint(ZERO + rest);
+};
+
+export const packLine = (line: Point[]) => {
+  let text = "";
+  let lon = 0;
+  let lat = 0;
+
+  for (const point of line) {
+    const x = Math.round(point[0] * PRECISION);
+    const y = Math.round(point[1] * PRECISION);
+    text += packNumber(y - lat) + packNumber(x - lon);
+    lon = x;
+    lat = y;
+  }
+
+  return text;
+};
+
+export const unpackLine = (text: string) => {
+  const numbers: number[] = [];
+  let value = 0;
+  let scale = 1;
+
+  for (const char of text) {
+    const code = (char.codePointAt(0) ?? ZERO) - ZERO;
+    value += (code % CHUNK) * scale;
+    scale *= CHUNK;
+
+    if (code < CHUNK) {
+      numbers.push(value % 2 === 1 ? -(value + 1) / 2 : value / 2);
+      value = 0;
+      scale = 1;
+    }
+  }
+
+  const line: Point[] = [];
+  let lon = 0;
+  let lat = 0;
+
+  for (let index = 1; index < numbers.length; index += 2) {
+    lat += numbers[index - 1] ?? 0;
+    lon += numbers[index] ?? 0;
+    line.push([lon / PRECISION, lat / PRECISION]);
+  }
+
+  return line;
+};

@@ -4,7 +4,8 @@ import { useEffect, useState } from "react";
 
 import { cellsAround } from "@/lib/geo";
 import { readJson } from "@/lib/json";
-import type { Road, RoadIndex } from "@/lib/road";
+import { unpackRoad } from "@/lib/road";
+import type { PackedRoad, Road, RoadIndex } from "@/lib/road";
 
 const loaded = new Map<string, Promise<Road[]>>();
 let index: Promise<RoadIndex> | undefined;
@@ -28,7 +29,9 @@ const readCell = async (path: string) => {
     return [];
   }
 
-  return await readJson<Road[]>(response);
+  const roads = await readJson<PackedRoad[]>(response);
+
+  return roads.map((road) => unpackRoad(road));
 };
 
 const cell = async (build: string, key: string) => {

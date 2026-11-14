@@ -266,6 +266,17 @@ const untilText = (until: number | null) =>
     ? "until further notice"
     : `until ${new Date(until * 1000).toLocaleString([], { hour: "numeric", minute: "2-digit", weekday: "short" })}`;
 
+const closureLines = (closures: Ranked["closures"]) => {
+  const lines = new Map<string, number>();
+
+  for (const closure of closures) {
+    const line = `${closure.kind === "Full" ? "Closed" : closure.kind} on ${closure.route}, ${closure.work.toLowerCase()}, ${untilText(closure.until)}`;
+    lines.set(line, (lines.get(line) ?? 0) + 1);
+  }
+
+  return [...lines];
+};
+
 const TOPIC_ORDER = ["closure", "pavement", "safety", "twistiness", "scenery"];
 
 const TOPIC_WORD = new Map([
@@ -345,14 +356,13 @@ export const Story = ({
         </div>
       </header>
       <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-3 pb-[max(16px,env(safe-area-inset-bottom))]">
-        {closures.map((closure) => (
+        {closureLines(closures).map(([line, spots]) => (
           <p
             className="border-2 border-l-[12px] border-ink border-l-rough p-2 font-bold"
-            key={`${closure.from.join(",")}${closure.kind}`}
+            key={line}
           >
-            {closure.kind === "Full" ? "Closed" : closure.kind} on{" "}
-            {closure.route}, {closure.work.toLowerCase()},{" "}
-            {untilText(closure.until)}
+            {line}
+            {spots > 1 && ` (${spots} spots)`}
           </p>
         ))}
         <Directions ranked={ranked} />

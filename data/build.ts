@@ -6,7 +6,7 @@ import { pieces, samples, simplify, splitWhere, thin } from "@/data/curves";
 import type { Piece } from "@/data/curves";
 import { Grid } from "@/data/grid";
 import { LineGrid } from "@/data/line-grid";
-import { chain, extractOsm } from "@/data/osm";
+import { baseName, chain, extractOsm } from "@/data/osm";
 import type { Place, Way } from "@/data/osm";
 import {
   gradeOf,
@@ -38,6 +38,7 @@ const OUT = `${import.meta.dir}/../public/roads`;
 const BUILD = new Date().toISOString().slice(0, 16).replaceAll(/[-:T]/gu, "");
 const FEET = 3.28084;
 const BUILT_UP = 12;
+const TOWN_SCENIC = 60;
 const OPEN = 4;
 const OVERVIEW_METERS = 12;
 const DETAIL_METERS = 1;
@@ -115,6 +116,57 @@ const longest = (owned: Owned[], field: (way: Way) => string) => {
   }
 
   return [...totals].toSorted((a, b) => b[1] - a[1])[0]?.[0] ?? "";
+};
+
+const ROUTE = /^(?:CA|US) (?<number>\d+)/u;
+const AKA_METERS = 800;
+
+const nameOf = (owned: Owned[], ref: string, riders: Rider[]) => {
+  const groups = new Map<string, { meters: number; names: Owned[] }>();
+
+  for (const item of owned) {
+    const key = roadKey(item.way.name);
+    const group = groups.get(key) ?? { meters: 0, names: [] };
+    group.meters += item.meters;
+    group.names.push(item);
+    groups.set(key, group);
+  }
+
+  const total = owned.reduce((sum, { meters }) => sum + meters, 0);
+  const ridersCall = new Set(riders.flatMap((rider) => rider.names));
+
+  const named = [...groups]
+    .map(([key, group]) => {
+      const raw = longest(group.names, (way) => way.name);
+      const variants = new Set(group.names.map(({ way }) => way.name)).size;
+
+      return {
+        key,
+        meters: group.meters,
+        name: variants > 1 ? baseName(raw) : raw,
+        ridersCall: ridersCall.has(key) && group.meters >= total / 4,
+      };
+    })
+    .toSorted(
+      (a, b) =>
+        Number(b.ridersCall) - Number(a.ridersCall) || b.meters - a.meters
+    );
+
+  const number = ROUTE.exec(ref)?.groups?.number;
+
+  const name =
+    named[0]?.key === "" && number !== undefined
+      ? `Highway ${number}`
+      : (named.find((item) => item.key !== "")?.name ?? "");
+
+  return {
+    aka: named.flatMap((item) =>
+      item.key !== "" && item.name !== name && item.meters >= AKA_METERS
+        ? [item.name]
+        : []
+    ),
+    name,
+  };
 };
 
 const loadSources = async () => {
@@ -314,6 +366,7 @@ const ridersReading = (riders: Rider[], point: Point): Reading | null => {
 };
 
 interface Stretch {
+  chain: number;
   piece: Piece;
   owners: Way[];
   road: Point[];
@@ -555,6 +608,8 @@ const describe = (sources: Sources, stretch: Stretch, riders: Rider[]) => {
   }));
 
   const members = [...new Set(owned.map(({ way }) => way))];
+  const ref = longest(owned, (way) => way.ref);
+  const { aka, name } = nameOf(owned, ref, riders);
   const highway = longest(owned, (way) => way.highway);
   const aadtMeasured = measured.traffic.length >= points.length * 0.3;
 
@@ -579,14 +634,15 @@ const describe = (sources: Sources, stretch: Stretch, riders: Rider[]) => {
   return {
     aadt,
     aadtMeasured,
+    aka,
     built: measured.built,
     coast: coast >= 0.3,
     curvature: Math.round(piece.curvature),
     high: high === null ? null : Math.round((high * FEET) / 10) * 10,
     low: low === null ? null : Math.round((low * FEET) / 10) * 10,
     miles: Math.round(miles * 10) / 10,
-    name: longest(owned, (way) => way.name),
-    paved: FIRE_ROAD.test(longest(owned, (way) => way.name))
+    name,
+    paved: FIRE_ROAD.test(name)
       ? false
       : pavedFor(measured.unpavedMeters, piece.meters, hasMeasure, tagged),
     pavedBy: pavement.pavedBy
@@ -605,7 +661,7 @@ const describe = (sources: Sources, stretch: Stretch, riders: Rider[]) => {
       Math.log10(20_000),
       Math.log10(200)
     ),
-    ref: longest(owned, (way) => way.ref),
+    ref,
     reports: reportsFor(riders),
     riders: new Set(riders.map((rider) => rider.url)).size,
     scenic: Math.min(
@@ -645,7 +701,7 @@ const listed = (road: Described) => {
   }
 
   if (road.built >= BUILT_UP) {
-    return road.riders > 0 || road.scenic >= 60;
+    return road.riders > 0 || road.scenic >= TOWN_SCENIC;
   }
 
   return (
@@ -754,7 +810,12 @@ const attachRiders = (
 
 type Shipped = Road & { detail: Point[] };
 
-type Stored = Shipped & { listed: boolean; built: number; ways: number[] };
+type Stored = Shipped & {
+  chain: number;
+  listed: boolean;
+  built: number;
+  ways: number[];
+};
 
 const writeDatabase = (all: Stored[]) => {
   const db = new Database(`${CACHE}/roads.db`);
@@ -877,7 +938,7 @@ const build = async () => {
   const sources = await loadSources();
   const stretches: Stretch[] = [];
 
-  for (const { coords, owners } of chain(sources.ways)) {
+  for (const [road, { coords, owners }] of chain(sources.ways).entries()) {
     const kept = thin(coords, 8);
     const line = kept.map((index) => coords[index]);
     const lineOwners = kept.map((index) => owners[index]);
@@ -898,6 +959,7 @@ const build = async () => {
 
         if (piece.meters >= 1000) {
           stretches.push({
+            chain: road,
             owners: lineOwners,
             piece: { ...piece, from: piece.from + start, to: piece.to + start },
             road: coords.slice(from, to + 1),
@@ -931,6 +993,7 @@ const build = async () => {
     all.push({
       ...shipped,
       built: density,
+      chain: stretch.chain,
       detail: round(simplify(stretch.road, DETAIL_METERS)),
       id: count === 1 ? base : `${base}-${count}`,
       line: round(simplify(stretch.road, OVERVIEW_METERS)),
@@ -940,7 +1003,25 @@ const build = async () => {
     });
   }
 
+  const drives = new Set(
+    all.flatMap((road) =>
+      road.listed && road.built < BUILT_UP ? [road.chain] : []
+    )
+  );
+
   const keptGrid = new LineGrid<string>(0.005);
+
+  for (const road of all) {
+    if (
+      road.built >= BUILT_UP &&
+      road.scenic < TOWN_SCENIC &&
+      drives.has(road.chain)
+    ) {
+      road.listed = false;
+      keptGrid.add(road.detail, road.id);
+    }
+  }
+
   const roads: Shipped[] = [];
 
   for (const road of all
@@ -961,7 +1042,15 @@ const build = async () => {
     }
 
     keptGrid.add(road.detail, road.id);
-    const { listed: _listed, built: _built, ways: _ways, ...shipped } = road;
+
+    const {
+      chain: _chain,
+      listed: _listed,
+      built: _built,
+      ways: _ways,
+      ...shipped
+    } = road;
+
     roads.push(shipped);
   }
 

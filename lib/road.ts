@@ -23,6 +23,7 @@ export interface Report {
 export interface Road {
   id: string;
   name: string;
+  aka: string[];
   ref: string;
   town: string;
   miles: number;

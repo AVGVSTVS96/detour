@@ -57,7 +57,10 @@ const find = (index: Found, typed: string, origin: Point | null) => {
   }
 
   for (const found of index.roads) {
-    const tier = tierOf(words(`${found.name} ${aliases(found.ref)}`), query);
+    const tier = tierOf(
+      words(`${found.name} ${found.aka.join(" ")} ${aliases(found.ref)}`),
+      query
+    );
 
     if (tier !== null) {
       hits.push({

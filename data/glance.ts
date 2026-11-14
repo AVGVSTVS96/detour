@@ -138,6 +138,7 @@ const roadRows = [...everyRoad.values()].map(({ road, key }): RoadRow => {
     tone,
     lon,
     lat,
+    road.aka,
   ];
 });
 

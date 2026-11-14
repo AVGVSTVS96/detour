@@ -80,7 +80,8 @@ const readSearch = async (): Promise<Found> => {
       name,
     })),
     roads: roads.map(
-      ([name, ref, town, cell, miles, smooth, word, tone, lon, lat]) => ({
+      ([name, ref, town, cell, miles, smooth, word, tone, lon, lat, aka]) => ({
+        aka,
         at: [lon, lat],
         cell,
         miles,

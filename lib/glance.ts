@@ -47,6 +47,7 @@ export type RoadRow = [
   tone: Tone,
   lon: number,
   lat: number,
+  aka: string[],
 ];
 
 export interface SearchFile {
@@ -56,6 +57,7 @@ export interface SearchFile {
 
 export interface FoundRoad {
   name: string;
+  aka: string[];
   ref: string;
   town: string;
   cell: string;

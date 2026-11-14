@@ -75,7 +75,7 @@ export const extractOsm = async () => {
 
 const refsOf = (way: Way) => way.ref.split(";").filter(Boolean);
 
-const baseName = (name: string) =>
+export const baseName = (name: string) =>
   name.replace(/\s*\(.*\)$/u, "").replace(/^(?:North|South|East|West)\s+/u, "");
 
 const heading = (from: Point, to: Point) =>
@@ -90,6 +90,22 @@ const turn = (a: number, b: number) =>
 const NAMED_TURN = Math.PI * 0.8;
 const REF_TURN = Math.PI * 0.6;
 const ONEWAY_TURN = Math.PI * 0.5;
+
+const ROUTE = /^(?:CA|US) \d+[A-Z]?$|^CR [A-Z]?\d+$/u;
+
+const routesOf = (way: Way) => refsOf(way).filter((ref) => ROUTE.test(ref));
+
+interface Road {
+  route: string;
+  name: string;
+  refs: Set<string>;
+}
+
+const onRoute = (road: Road, way: Way) =>
+  road.route !== "" && routesOf(way).includes(road.route);
+
+const claimOf = (road: Road, way: Way) =>
+  onRoute(road, way) ? `${road.route} ${way.id}` : String(way.id);
 
 export const chain = (ways: Way[]) => {
   const byNode = new Map<number, Way[]>();
@@ -106,11 +122,11 @@ export const chain = (ways: Way[]) => {
     }
   }
 
-  const used = new Set<number>();
+  const used = new Set<string>();
   const chains: { coords: Point[]; owners: Way[] }[] = [];
 
   const extend = (
-    road: { name: string; refs: Set<string> },
+    road: Road,
     coords: Point[],
     owners: Way[],
     node: number,
@@ -127,48 +143,68 @@ export const chain = (ways: Way[]) => {
       return heading(points[0], points[1] ?? points[0]);
     };
 
-    const sameName = (way: Way) =>
-      way.name !== "" && baseName(way.name) === road.name;
+    const sameName = (way: Way, from: Way) =>
+      way.name !== "" &&
+      baseName(way.name) ===
+        (road.route === "" ? road.name : baseName(from.name));
 
-    const joins = (way: Way) =>
-      sameName(way) ||
-      ((way.name === "" || road.name === "") &&
-        refsOf(way).some((ref) => road.refs.has(ref)));
+    const joins = (way: Way, from: Way) => {
+      if (onRoute(road, way)) {
+        return true;
+      }
+
+      if (routesOf(way).length > 0) {
+        return false;
+      }
+
+      return (
+        sameName(way, from) ||
+        (road.route === "" &&
+          (way.name === "" || road.name === "") &&
+          refsOf(way).some((ref) => road.refs.has(ref)))
+      );
+    };
+
+    const passes = (way: Way, from: Way) =>
+      way.structure ||
+      (road.route === "" && routesOf(way).length > 0 && sameName(way, from));
 
     const open = (way: Way, at: number) =>
-      !used.has(way.id) && (!way.oneway || way.nodes[atEnd ? 0 : 1] === at);
+      !used.has(claimOf(road, way)) &&
+      (!way.oneway || way.nodes[atEnd ? 0 : 1] === at);
 
     const limit = (way: Way, from: Way) => {
       if (way.oneway && from.oneway) {
         return ONEWAY_TURN;
       }
 
-      return sameName(way) ? NAMED_TURN : REF_TURN;
+      return onRoute(road, way) || sameName(way, from) ? NAMED_TURN : REF_TURN;
     };
 
-    const follow = (at: number, arriving: number, from: Way) => {
-      const [next] = (byNode.get(at) ?? [])
-        .filter((way) => open(way, at) && joins(way))
+    const follow = (at: number, arriving: number, from: Way) =>
+      (byNode.get(at) ?? [])
+        .filter(
+          (way) =>
+            open(way, at) &&
+            joins(way, from) &&
+            turn(arriving, leaving(way, at)) <= limit(way, from)
+        )
         .toSorted(
           (a, b) =>
-            Number(sameName(b)) - Number(sameName(a)) ||
+            Number(onRoute(road, b)) - Number(onRoute(road, a)) ||
+            Number(sameName(b, from)) - Number(sameName(a, from)) ||
             turn(arriving, leaving(a, at)) - turn(arriving, leaving(b, at))
-        );
-
-      return next !== undefined &&
-        turn(arriving, leaving(next, at)) <= limit(next, from)
-        ? next
-        : undefined;
-    };
+        )[0];
 
     const carries = (
       way: Way,
       at: number,
       arriving: number,
+      from: Way,
       depth: number
     ): boolean => {
       if (
-        !way.structure ||
+        !passes(way, from) ||
         !open(way, at) ||
         turn(arriving, leaving(way, at)) > REF_TURN
       ) {
@@ -187,7 +223,8 @@ export const chain = (ways: Way[]) => {
         follow(far, onward, way) !== undefined ||
         (depth > 0 &&
           (byNode.get(far) ?? []).some(
-            (after) => after !== way && carries(after, far, onward, depth - 1)
+            (after) =>
+              after !== way && carries(after, far, onward, way, depth - 1)
           ))
       );
     };
@@ -200,18 +237,21 @@ export const chain = (ways: Way[]) => {
         : coords.slice(0, 2).toReversed();
 
       const arriving = heading(from ?? to, to ?? from);
+      const last = owners[atEnd ? owners.length - 1 : 0];
 
       const next =
-        follow(at, arriving, owners[atEnd ? owners.length - 1 : 0]) ??
-        (byNode.get(at) ?? []).find((way) => carries(way, at, arriving, 2));
+        follow(at, arriving, last) ??
+        (byNode.get(at) ?? []).find((way) =>
+          carries(way, at, arriving, last, 2)
+        );
 
       if (next === undefined) {
         return;
       }
 
-      used.add(next.id);
+      used.add(claimOf(road, next));
 
-      if (!next.structure) {
+      if (!next.structure && road.route === "") {
         if (road.name === "" && next.name !== "") {
           road.name = baseName(next.name);
         }
@@ -238,27 +278,59 @@ export const chain = (ways: Way[]) => {
     }
   };
 
-  const degree = (way: Way) => byNode.get(way.nodes[0])?.length ?? 0;
+  const start = (way: Way, route: string) => {
+    const road = {
+      name: baseName(way.name),
+      refs: new Set(refsOf(way)),
+      route,
+    };
 
-  const starts = ways
-    .filter((way) => way.name !== "" || way.ref !== "")
-    .toSorted(
-      (a, b) =>
-        Number(a.structure) - Number(b.structure) || degree(a) - degree(b)
-    );
+    const claim = claimOf(road, way);
 
-  for (const way of starts) {
-    if (used.has(way.id)) {
-      continue;
+    if (used.has(claim)) {
+      return;
     }
 
-    used.add(way.id);
-    const road = { name: baseName(way.name), refs: new Set(refsOf(way)) };
+    used.add(claim);
     const coords = [...way.coords];
     const owners = coords.map(() => way);
     extend(road, coords, owners, way.nodes[1], true);
     extend(road, coords, owners, way.nodes[0], false);
     chains.push({ coords, owners });
+  };
+
+  const degree = (way: Way) => byNode.get(way.nodes[0])?.length ?? 0;
+
+  const order = (a: Way, b: Way) =>
+    Number(a.structure) - Number(b.structure) || degree(a) - degree(b);
+
+  const routes = new Map<string, Way[]>();
+
+  for (const way of ways) {
+    for (const route of routesOf(way)) {
+      const list = routes.get(route);
+
+      if (list) {
+        list.push(way);
+      } else {
+        routes.set(route, [way]);
+      }
+    }
+  }
+
+  for (const [route, members] of routes) {
+    for (const way of members.toSorted(order)) {
+      start(way, route);
+    }
+  }
+
+  for (const way of ways
+    .filter(
+      (item) =>
+        routesOf(item).length === 0 && (item.name !== "" || item.ref !== "")
+    )
+    .toSorted(order)) {
+    start(way, "");
   }
 
   return chains;

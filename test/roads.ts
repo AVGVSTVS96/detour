@@ -4,6 +4,7 @@ export const ROADS = {
   angelesCrestHighway: {
     aadt: 380,
     aadtMeasured: true,
+    aka: [],
     coast: false,
     curvature: 28_019,
     high: 7050,
@@ -65,6 +66,7 @@ export const ROADS = {
   glendoraRidgeRoad: {
     aadt: 300,
     aadtMeasured: false,
+    aka: [],
     coast: false,
     curvature: 17_879,
     high: 4560,
@@ -117,6 +119,7 @@ export const ROADS = {
   mulhollandHighway: {
     aadt: 3000,
     aadtMeasured: false,
+    aka: [],
     coast: false,
     curvature: 23_042,
     high: 2050,
@@ -171,6 +174,7 @@ export const ROADS = {
   pacificCoastHighway: {
     aadt: 25_400,
     aadtMeasured: true,
+    aka: [],
     coast: true,
     curvature: 1815,
     high: 230,
@@ -245,6 +249,7 @@ export const ROADS = {
   skylineDrive: {
     aadt: 400,
     aadtMeasured: false,
+    aka: [],
     coast: false,
     curvature: 3071,
     high: 1480,
@@ -275,6 +280,7 @@ export const ROADS = {
   southMalibuCanyonRoad: {
     aadt: 4124,
     aadtMeasured: true,
+    aka: [],
     coast: false,
     curvature: 1679,
     high: 610,

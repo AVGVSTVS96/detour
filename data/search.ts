@@ -69,6 +69,7 @@ for (const list of lists) {
       verdict.tone,
       tenths(road.paving),
       sourceOf(road),
+      road.aka,
     ]);
 
     if (road.town) {

@@ -13,6 +13,7 @@ export type Listing = [
   tone: Tone,
   paving: Road["paving"],
   source: string,
+  aka: string[],
 ];
 
 export interface Town {
@@ -70,7 +71,9 @@ export const hitsFor = (
     .map((town) => ({ kind: "town", meters: away(town.at), town }));
 
   const roads: Hit[] = found.roads
-    .filter(([name, ref]) => matches(`${name} ${ref}`, query))
+    .filter((listing) =>
+      matches(`${listing[0]} ${listing[1]} ${listing[8].join(" ")}`, query)
+    )
     .map((listing) => ({ kind: "road", listing, meters: away(listing[3]) }));
 
   return [
